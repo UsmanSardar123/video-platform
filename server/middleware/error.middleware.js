@@ -1,28 +1,27 @@
+
 const ApiError = require('../utils/apiError.util');
 
 const errorHandler = (err, req, res, next) => {
-  let error = err;
-
-  // Convert generic Error to ApiError if not already an ApiError instance
-  if (!(error instanceof ApiError)) {
-    const statusCode = error.statusCode || 500;
-    const isProduction = process.env.NODE_ENV === 'production';
-    const message = isProduction && statusCode === 500
-      ? 'Internal Server Error'
-      : (error.message || 'Something went wrong');
-
-    error = new ApiError(statusCode, message, error?.errors || [], err.stack);
+  if (res.headersSent) {
+    return next(err);
   }
 
-  const response = {
-    statusCode: error.statusCode,
-    success: false,
-    message: error.message,
-    errors: error.errors || [],
-    ...(process.env.NODE_ENV !== 'production' && { stack: error.stack }),
-  };
+  const statusCode = Number.isInteger(err.statusCode)
+    ? err.statusCode
+    : 500;
 
-  return res.status(error.statusCode).json(response);
+  if (statusCode >= 500) console.error('Unhandled application error');
+
+  res.status(statusCode).json({
+    success: false,
+    statusCode,
+    message: statusCode >= 500 ? 'Internal Server Error' : err.message || 'Request failed',
+    stack: undefined,
+    ...(Array.isArray(err.errors) && err.errors.length
+      ? { errors: err.errors }
+      : {}),
+  });
 };
 
 module.exports = errorHandler;
+module.exports.errorHandler = errorHandler;

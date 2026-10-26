@@ -32,6 +32,15 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+      ],
+      "expo-video",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Streanub to access your videos so you can upload them.",
+          "microphonePermission": false
+        }
       ]
     ],
     "experiments": {
