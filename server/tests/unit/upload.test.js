@@ -45,4 +45,35 @@ describe('Cloudinary upload authorization', () => {
       title: 'Clip', publicId: 'asset', format: 'mp4', creator: 'attacker',
     } }).success).toBe(false);
   });
+
+  test('maps Cloudinary SDK 404 error (nested in error.error.http_code) to ApiError 400 instead of 500', async () => {
+    const publicId = 'streanub/user_user123/clip_123e4567-e89b-12d3-a456-426614174000';
+    cloudinary.api.resource.mockRejectedValueOnce({
+      error: { message: 'Resource not found', http_code: 404 },
+    });
+    await expect(verifyUploadedAsset({ userId: 'user123', publicId, format: 'mp4' }))
+      .rejects.toMatchObject({ statusCode: 400, message: 'Uploaded video was not found in Cloudinary' });
+  });
+
+  test('maps Cloudinary SDK 401 error (nested in error.error.http_code) to ApiError 502 instead of 500', async () => {
+    const publicId = 'streanub/user_user123/clip_123e4567-e89b-12d3-a456-426614174000';
+    cloudinary.api.resource.mockRejectedValueOnce({
+      error: { message: 'unknown api_key', http_code: 401 },
+    });
+    await expect(verifyUploadedAsset({ userId: 'user123', publicId, format: 'mp4' }))
+      .rejects.toMatchObject({
+        statusCode: 502,
+        message: expect.stringContaining('Cloudinary storage authentication failed'),
+      });
+  });
+
+  test('rejects authorization and explicitly identifies missing or placeholder environment variables instead of masking', () => {
+    process.env.CLOUDINARY_CLOUD_NAME = 'your_cloudinary_cloud_name';
+    process.env.CLOUDINARY_API_KEY = 'your_cloudinary_api_key';
+    process.env.CLOUDINARY_API_SECRET = 'your_cloudinary_api_secret';
+
+    expect(() => createUploadAuthorization('user123')).toThrow(
+      /CLOUDINARY_CLOUD_NAME.*CLOUDINARY_API_KEY.*CLOUDINARY_API_SECRET/
+    );
+  });
 });

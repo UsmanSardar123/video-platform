@@ -2,13 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Platform, StyleSheet } from 'react-native';
-import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, TextInput, ThemeToggleButton, View } from '@/components/theme-native';
+import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StatusBar, Text, TextInput, ThemeToggleButton, View } from '@/components/theme-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { apiRequest, ApiRequestError } from '@/lib/api';
 import { useAuth } from '@/contexts/auth-context';
 import { useToast } from '@/contexts/toast-context';
 import { UploadDropZone } from '@/components/upload-drop-zone';
 import { Design } from '@/constants/design';
+import { VIDEO_CATEGORIES } from '@/constants/categories';
+import { useThemeMode } from '@/contexts/theme-context';
 
 type VideoRecord = { _id: string; title: string; videoUrl: string; sourceType: string; thumbnailUrl?: string };
 type Signature = { apiKey: string; timestamp: number; publicId: string; uploadUrl: string; signature: string; allowedFormats: string[]; maxBytes: number; expiresAt: string };
@@ -19,11 +21,14 @@ const formats = ['mp4', 'mov', 'm4v', 'webm'];
 
 export default function UploadScreen() {
   const { user, loading: authLoading } = useAuth();
+  const { mode } = useThemeMode();
+  const isDark = mode === 'dark';
+  const C = isDark ? Design.color : Design.light;
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const { showToast } = useToast();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('General');
+  const [category, setCategory] = useState<string>('Other');
   const [visibility, setVisibility] = useState<'public' | 'private' | 'unlisted'>('public');
   const [externalMode, setExternalMode] = useState(false);
   const [externalUrl, setExternalUrl] = useState('');
@@ -68,8 +73,17 @@ export default function UploadScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['videos'], allowsEditing: false });
       if (result.canceled || !result.assets[0]) return;
       const asset = result.assets[0];
-      const name = asset.fileName || asset.uri.split('/').pop() || 'video';
-      const extension = name.split('.').pop()?.toLowerCase() || '';
+      const rawName = (asset.fileName || asset.uri.split('/').pop() || 'video.mp4').split('?')[0];
+      let extension = rawName.includes('.') ? rawName.split('.').pop()?.toLowerCase() || '' : '';
+      if (!formats.includes(extension) && asset.mimeType) {
+        const mimeSub = asset.mimeType.split('/')[1]?.toLowerCase();
+        if (mimeSub && formats.includes(mimeSub)) {
+          extension = mimeSub;
+        } else if (mimeSub === 'quicktime') {
+          extension = 'mov';
+        }
+      }
+      const name = rawName.includes('.') ? rawName : `${rawName}.${extension || 'mp4'}`;
       if (!formats.includes(extension)) { setError('Choose an MP4, MOV, M4V, or WebM video.'); return; }
       if (Platform.OS === 'web' && !asset.file) { setError('This browser did not provide the selected file. Try dragging the video into the upload area.'); return; }
       if (!asset.fileSize || asset.fileSize > 500 * 1024 * 1024) {
@@ -77,7 +91,8 @@ export default function UploadScreen() {
         return;
       }
       const uri = Platform.OS === 'web' && asset.file ? URL.createObjectURL(asset.file) : asset.uri;
-      setVideo({ uri, name, mimeType: asset.mimeType || `video/${extension}`, fileSize: asset.fileSize, duration: asset.duration ? asset.duration / 1000 : undefined, browserFile: asset.file });
+      const mimeType = asset.mimeType || (extension === 'mov' ? 'video/quicktime' : `video/${extension || 'mp4'}`);
+      setVideo({ uri, name, mimeType, fileSize: asset.fileSize, duration: asset.duration ? asset.duration / 1000 : undefined, browserFile: asset.file });
       setPendingAsset(null);
       setPendingAuthorization(null);
       setMessage('');
@@ -97,8 +112,15 @@ export default function UploadScreen() {
     body.append('overwrite', 'false');
     body.append('allowed_formats', auth.allowedFormats.join(','));
     body.append('signature', auth.signature);
-      if (Platform.OS === 'web' && selected.browserFile) body.append('file', selected.browserFile, selected.name);
-      else body.append('file', { uri: selected.uri, name: selected.name, type: selected.mimeType } as never);
+    if (Platform.OS === 'web' && selected.browserFile) {
+      body.append('file', selected.browserFile, selected.name);
+    } else {
+      body.append('file', {
+        uri: selected.uri,
+        name: selected.name,
+        type: selected.mimeType || 'video/mp4',
+      } as never);
+    }
     const request = new XMLHttpRequest();
     uploadRequest.current = request;
     setCanCancelUpload(true);
@@ -161,7 +183,7 @@ export default function UploadScreen() {
       }
       setMessage('Video saved successfully.');
       showToast('Video saved successfully.');
-      setTitle(''); setDescription(''); setExternalUrl(''); setVideo(null); setProgress(0);
+      setTitle(''); setDescription(''); setCategory('Other'); setExternalUrl(''); setVideo(null); setProgress(0);
       if (!await refreshVideos()) setMessage('Video saved, but My Uploads could not refresh.');
       if (returnTo === '/main/profile') router.replace('/main/profile');
     } catch (cause) {
@@ -181,51 +203,112 @@ export default function UploadScreen() {
     setPendingAsset(null); setPendingAuthorization(null); setMessage('');
   };
 
-  if (authLoading) return <SafeAreaView edges={['top']} style={styles.center}><ActivityIndicator color="#ff3434" /></SafeAreaView>;
+  if (authLoading) return <SafeAreaView edges={['top']} style={[styles.center, { backgroundColor: C.background }]}><ActivityIndicator color={C.accent} /></SafeAreaView>;
   if (!user) return <Redirect href={{ pathname: '/auth', params: { returnTo: '/upload' } }} />;
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={[styles.screen, { backgroundColor: C.background }]} edges={['top']}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()}><Text style={styles.muted}>‹ Back</Text></Pressable>
-          <View style={styles.headingBlock}><Text style={styles.eyebrow}>CREATOR STUDIO</Text><Text style={styles.heading}>Create</Text></View>
+          <Pressable onPress={() => router.back()}><Text style={[styles.muted, { color: C.muted }]}>‹ Back</Text></Pressable>
+          <View style={styles.headingBlock}><Text style={[styles.eyebrow, { color: C.accent }]}>CREATOR STUDIO</Text><Text style={[styles.heading, { color: C.text }]}>Create</Text></View>
           <ThemeToggleButton />
         </View>
         <View style={styles.switchRow}>
-          <ModeButton label="Upload file" selected={!externalMode} onPress={() => { setExternalMode(false); setError(''); }} />
-          <ModeButton label="Video link" selected={externalMode} onPress={() => { setExternalMode(true); setError(''); }} />
+          <ModeButton label="Upload file" selected={!externalMode} onPress={() => { setExternalMode(false); setError(''); }} isDark={isDark} />
+          <ModeButton label="Video link" selected={externalMode} onPress={() => { setExternalMode(true); setError(''); }} isDark={isDark} />
         </View>
-        <View style={styles.card}>
-          <Text style={styles.title}>{externalMode ? 'Share an external video' : 'Upload a video'}</Text>
-          {externalMode ? <TextInput style={styles.input} placeholder="YouTube, Vimeo, or Twitch video URL" placeholderTextColor="#777" value={externalUrl} onChangeText={setExternalUrl} autoCapitalize="none" keyboardType="url" /> : (
+        <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }, !isDark && Design.shadow.sm]}>
+          <Text style={[styles.title, { color: C.text }]}>{externalMode ? 'Share an external video' : 'Upload a video'}</Text>
+          {externalMode ? (
+            <TextInput
+              style={[styles.input, { backgroundColor: C.surfaceRaised, borderColor: C.border, color: C.text }]}
+              placeholder="YouTube, Vimeo, or Twitch video URL"
+              placeholderTextColor={C.muted}
+              value={externalUrl}
+              onChangeText={setExternalUrl}
+              autoCapitalize="none"
+              keyboardType="url"
+            />
+          ) : (
             <UploadDropZone onFile={acceptBrowserFile}>
-              <Pressable style={styles.picker} onPress={chooseVideo} disabled={busy}>
-                <Text style={styles.pickTitle}>{video?.name || (Platform.OS === 'web' ? 'Choose or drop a video' : 'Choose a video')}</Text>
-                <Text style={styles.muted}>{video ? `${(video.fileSize / 1024 / 1024).toFixed(1)} MB${video.duration ? ` · ${Math.round(video.duration)} sec` : ''}` : 'MP4, MOV, M4V, or WebM · up to 500 MB'}</Text>
+              <Pressable style={[styles.picker, { backgroundColor: C.surfaceRaised, borderColor: C.accent }]} onPress={chooseVideo} disabled={busy}>
+                <Text style={[styles.pickTitle, { color: C.text }]}>{video?.name || (Platform.OS === 'web' ? 'Choose or drop a video' : 'Choose a video')}</Text>
+                <Text style={[styles.muted, { color: C.muted }]}>{video ? `${(video.fileSize / 1024 / 1024).toFixed(1)} MB${video.duration ? ` · ${Math.round(video.duration)} sec` : ''}` : 'MP4, MOV, M4V, or WebM · up to 500 MB'}</Text>
               </Pressable>
             </UploadDropZone>
           )}
           {video && !externalMode ? <LocalVideoPreview uri={video.uri} /> : null}
-          <TextInput style={styles.input} placeholder="Title" placeholderTextColor="#777" value={title} onChangeText={setTitle} maxLength={150} />
-          <TextInput style={[styles.input, styles.description]} placeholder="Description (optional)" placeholderTextColor="#777" value={description} onChangeText={setDescription} multiline maxLength={5000} />
-          <TextInput style={styles.input} placeholder="Category" placeholderTextColor="#777" value={category} onChangeText={setCategory} maxLength={60} />
-          <View style={styles.visibilityRow}>{(['public', 'unlisted', 'private'] as const).map((value) => <ModeButton key={value} label={value} selected={visibility === value} onPress={() => setVisibility(value)} />)}</View>
-          {progress > 0 && <View><Text style={styles.muted}>{progress < 100 ? `Uploading ${progress}%` : 'Verifying video…'}</Text><View style={styles.track}><View style={[styles.bar, { width: `${progress}%` }]} /></View></View>}
-          <Pressable style={[styles.submit, busy && styles.disabled]} disabled={busy} onPress={submit} accessibilityRole="button">
+          <TextInput
+            style={[styles.input, { backgroundColor: C.surfaceRaised, borderColor: C.border, color: C.text }]}
+            placeholder="Title"
+            placeholderTextColor={C.muted}
+            value={title}
+            onChangeText={setTitle}
+            maxLength={150}
+          />
+          <TextInput
+            style={[styles.input, styles.description, { backgroundColor: C.surfaceRaised, borderColor: C.border, color: C.text }]}
+            placeholder="Description (optional)"
+            placeholderTextColor={C.muted}
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            maxLength={5000}
+          />
+
+          <View style={styles.categorySection}>
+            <View style={styles.categoryHeader}>
+              <Text style={[styles.sectionLabel, { color: C.text }]}>Category</Text>
+              <Text style={[styles.selectedCategoryBadge, { color: C.accent, backgroundColor: C.accentSurface }]}>{category}</Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryPickerList}
+              keyboardShouldPersistTaps="handled"
+            >
+              {VIDEO_CATEGORIES.map((cat) => (
+                <Pressable
+                  key={cat}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Select category ${cat}`}
+                  accessibilityState={{ selected: category === cat }}
+                  style={[
+                    styles.categoryChip,
+                    { backgroundColor: C.surfaceRaised, borderColor: C.border },
+                    category === cat && [styles.categoryChipSelected, { backgroundColor: C.accent, borderColor: C.accent }],
+                  ]}
+                  onPress={() => setCategory(cat)}
+                >
+                  <Text style={[styles.categoryChipText, { color: C.secondary }, category === cat && styles.categoryChipTextSelected]}>
+                    {cat}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+          <View style={styles.visibilityRow}>
+            {(['public', 'unlisted', 'private'] as const).map((value) => (
+              <ModeButton key={value} label={value} selected={visibility === value} onPress={() => setVisibility(value)} isDark={isDark} />
+            ))}
+          </View>
+          {progress > 0 && <View><Text style={[styles.muted, { color: C.muted }]}>{progress < 100 ? `Uploading ${progress}%` : 'Verifying video…'}</Text><View style={[styles.track, { backgroundColor: C.border }]}><View style={[styles.bar, { width: `${progress}%`, backgroundColor: C.accent }]} /></View></View>}
+          <Pressable style={[styles.submit, { backgroundColor: C.accent }, busy && styles.disabled]} disabled={busy} onPress={submit} accessibilityRole="button">
             {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>{externalMode ? 'Save video link' : 'Upload video'}</Text>}
           </Pressable>
           {busy && canCancelUpload ? <Pressable onPress={() => uploadRequest.current?.abort()} accessibilityRole="button"><Text style={styles.cancel}>Cancel upload</Text></Pressable> : null}
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           {message ? <Text style={styles.success}>{message}</Text> : null}
         </View>
-        <View style={styles.card}>
-          <Text style={styles.title}>My uploads</Text>
-          {loadingVideos ? <ActivityIndicator color="#ff3434" /> : myVideos.length ? myVideos.map((item) => (
-            <Pressable key={item._id} style={styles.videoRow} onPress={() => router.push({ pathname: '/watch', params: { id: item._id } })}>
-              <Text style={styles.videoTitle}>{item.title}</Text><Text style={styles.muted}>{item.sourceType === 'cloudinary' ? 'File' : `Link (${item.sourceType})`}</Text>
+        <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }, !isDark && Design.shadow.sm]}>
+          <Text style={[styles.title, { color: C.text }]}>My uploads</Text>
+          {loadingVideos ? <ActivityIndicator color={C.accent} /> : myVideos.length ? myVideos.map((item) => (
+            <Pressable key={item._id} style={[styles.videoRow, { borderTopColor: C.border }]} onPress={() => router.push({ pathname: '/watch', params: { id: item._id } })}>
+              <Text style={[styles.videoTitle, { color: C.text }]}>{item.title}</Text><Text style={[styles.muted, { color: C.muted }]}>{item.sourceType === 'cloudinary' ? 'File' : `Link (${item.sourceType})`}</Text>
             </Pressable>
-          )) : <Text style={styles.muted}>You have not uploaded a video yet.</Text>}
+          )) : <Text style={[styles.muted, { color: C.muted }]}>You have not uploaded a video yet.</Text>}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -237,8 +320,22 @@ function LocalVideoPreview({ uri }: { uri: string }) {
   return <View style={styles.preview}><VideoView player={player} style={StyleSheet.absoluteFill} nativeControls contentFit="contain" /></View>;
 }
 
-function ModeButton({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ selected }} style={[styles.modeButton, selected && styles.selected]} onPress={onPress}><Text style={styles.modeText}>{label}</Text></Pressable>;
+function ModeButton({ label, selected, onPress, isDark }: { label: string; selected: boolean; onPress: () => void; isDark?: boolean }) {
+  const C = isDark ? Design.color : Design.light;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      style={[
+        styles.modeButton,
+        { backgroundColor: C.surface, borderColor: C.border },
+        selected && { backgroundColor: C.accentSurface, borderColor: C.accent },
+      ]}
+      onPress={onPress}
+    >
+      <Text style={[styles.modeText, { color: selected ? C.accent : C.secondary }]}>{label}</Text>
+    </Pressable>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -250,4 +347,13 @@ const styles = StyleSheet.create({
   submit: { minHeight: 50, justifyContent: 'center', alignItems: 'center', borderRadius: Design.radius.sm, backgroundColor: Design.color.accent }, disabled: { opacity: 0.58 }, submitText: { color: '#fff', fontWeight: '800', fontSize: 14 }, cancel: { color: Design.color.danger, textAlign: 'center', padding: 8 },
   error: { color: Design.color.danger, fontSize: 13 }, success: { color: Design.color.success, fontSize: 13 }, track: { height: 6, borderRadius: 4, backgroundColor: Design.color.border, marginTop: 8, overflow: 'hidden' }, bar: { height: 6, backgroundColor: Design.color.accent },
   videoRow: { borderTopColor: Design.color.border, borderTopWidth: 1, paddingTop: 12, gap: 4 }, videoTitle: { color: Design.color.text, fontSize: 14, fontWeight: '600' },
+  categorySection: { gap: 8, marginVertical: 4 },
+  categoryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sectionLabel: { color: Design.color.text, fontSize: 13, fontWeight: '700' },
+  selectedCategoryBadge: { color: Design.color.accent, fontSize: 12, fontWeight: '700', backgroundColor: Design.color.accentSurface, paddingHorizontal: 10, paddingVertical: 4, borderRadius: Design.radius.pill },
+  categoryPickerList: { gap: 8, paddingVertical: 4 },
+  categoryChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: Design.radius.pill, backgroundColor: Design.color.surfaceRaised, borderWidth: 1, borderColor: Design.color.border },
+  categoryChipSelected: { backgroundColor: Design.color.accent, borderColor: Design.color.accent },
+  categoryChipText: { color: Design.color.secondary, fontSize: 12, fontWeight: '600' },
+  categoryChipTextSelected: { color: '#ffffff', fontWeight: '800' },
 });

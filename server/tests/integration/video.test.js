@@ -29,6 +29,48 @@ describe('public and owner video access', () => {
     expect(Video.find).toHaveBeenCalledWith({ visibility: 'public' });
   });
 
+  test('returns all public feed records when category is All or omitted', async () => {
+    const record = { _id: 'video1', visibility: 'public', title: 'All Videos' };
+    Video.find.mockReturnValue(chain([record]));
+    Video.countDocuments.mockResolvedValue(1);
+    const response = await request(app).get('/api/videos?category=All');
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual([record]);
+    expect(Video.find).toHaveBeenCalledWith({ visibility: 'public' });
+  });
+
+  test('filters public feed records by category (e.g. Sports)', async () => {
+    const record = { _id: 'video2', visibility: 'public', title: 'Sports Highlight', category: 'Sports' };
+    Video.find.mockReturnValue(chain([record]));
+    Video.countDocuments.mockResolvedValue(1);
+    const response = await request(app).get('/api/videos?category=Sports');
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual([record]);
+    expect(Video.find).toHaveBeenCalledWith({
+      visibility: 'public',
+      category: /^Sports$/i,
+    });
+  });
+
+  test('filters public feed records by Other category including legacy General and missing categories', async () => {
+    const record = { _id: 'video3', visibility: 'public', title: 'Other Video', category: 'Other' };
+    Video.find.mockReturnValue(chain([record]));
+    Video.countDocuments.mockResolvedValue(1);
+    const response = await request(app).get('/api/videos?category=Other');
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual([record]);
+    expect(Video.find).toHaveBeenCalledWith({
+      visibility: 'public',
+      $or: [
+        { category: /^other$/i },
+        { category: /^general$/i },
+        { category: { $exists: false } },
+        { category: null },
+        { category: '' },
+      ],
+    });
+  });
+
   test('does not reveal a private video to a visitor but allows its owner', async () => {
     Video.findOne.mockReturnValueOnce(chain(null));
     const privateRecord = { _id: 'private1', visibility: 'private' };

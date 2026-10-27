@@ -1,4 +1,9 @@
 
+const path = require('path');
+const dotenv = require('dotenv');
+
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -10,6 +15,8 @@ const videoRoutes = require('./routes/video.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const externalVideoRoutes = require('./routes/externalVideo.routes');
 const searchRoutes = require('./routes/search.routes');
+const subscriptionRoutes = require('./routes/subscription.routes');
+const notificationRoutes = require('./routes/notification.routes');
 
 const { requestLogger } = require('./middleware/logger.middleware');
 const { errorHandler } = require('./middleware/error.middleware');
@@ -54,11 +61,13 @@ app.use(
   })
 );
 
+app.set('trust proxy', 1);
+
 app.use(
   '/api',
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 200,
+    limit: Number(process.env.RATE_LIMIT_MAX) || 1200,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: {
@@ -89,6 +98,8 @@ app.use('/api/auth', authRoutes);
 // User profile routes
 app.use('/api/users', userRoutes);
 app.use('/api/videos', videoRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/external-videos', externalVideoRoutes);
 app.use('/api/search', searchRoutes);

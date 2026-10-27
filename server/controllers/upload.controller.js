@@ -14,4 +14,10 @@ const complete = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-module.exports = { authorize, complete };
+const authorizeAvatar = (req, res, next) => {
+  try {
+    res.status(200).json({ success: true, data: cloudinaryService.createAvatarUploadAuthorization(req.user.id) });
+  } catch (error) { next(error); }
+};
+
+module.exports = { authorize, authorizeAvatar, complete };

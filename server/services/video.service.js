@@ -1,6 +1,7 @@
 const Video = require('../models/video.model');
 const ApiError = require('../utils/apiError.util');
 const { verifyUploadedAsset, deleteVideoAssets } = require('./cloudinary.service');
+const { notifyNewVideo } = require('./notificationEvents.service');
 
 const completeUpload = async (userId, metadata) => {
   const asset = await verifyUploadedAsset({
@@ -16,7 +17,7 @@ const completeUpload = async (userId, metadata) => {
     return existing;
   }
   try {
-    return await Video.create({
+    const created = await Video.create({
       title: metadata.title,
       description: metadata.description,
       category: metadata.category,
@@ -24,10 +25,15 @@ const completeUpload = async (userId, metadata) => {
       creator: userId,
       cloudinaryPublicId: asset.public_id,
       videoUrl: asset.secure_url,
-      thumbnailUrl: asset.secure_url.replace('/video/upload/', '/video/upload/so_0/').replace(/\.[^.]+$/, '.jpg'),
+      thumbnailUrl: asset.secure_url.includes('/video/upload/')
+        ? asset.secure_url.replace('/video/upload/', '/video/upload/so_0/').replace(/\.[^.]+$/, '.jpg')
+        : (asset.thumbnail_url || 'https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800'),
       duration: Number.isFinite(asset.duration) ? asset.duration : 0,
       sourceType: 'cloudinary',
     });
+    // Only after the video is persisted; fire-and-forget and never rejects.
+    void notifyNewVideo(created);
+    return created;
   } catch (error) {
     if (error.code === 11000) {
       const duplicate = await Video.findOne({ cloudinaryPublicId: asset.public_id });

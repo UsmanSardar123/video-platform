@@ -12,7 +12,9 @@ type AuthContextValue = {
   login: (email: string, password: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   logout: () => Promise<void>;
-  updateProfile: (input: Pick<SessionUser, 'username' | 'fullName' | 'email' | 'bio'>) => Promise<void>;
+  updateProfile: (input: Partial<Pick<SessionUser, 'username' | 'fullName' | 'email' | 'bio' | 'avatar'>>) => Promise<void>;
+  changeEmail: (password: string, newEmail: string) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   deleteAccount: (password: string) => Promise<void>;
 };
 
@@ -60,12 +62,28 @@ export function AuthProvider({ children }: { children: import('react').ReactNode
   const logout = useCallback(async () => {
     try { await signOut(); } finally { setUser(null); }
   }, []);
-  const updateProfile = useCallback(async (input: Pick<SessionUser, 'username' | 'fullName' | 'email' | 'bio'>) => {
+  const updateProfile = useCallback(async (input: Partial<Pick<SessionUser, 'username' | 'fullName' | 'email' | 'bio' | 'avatar'>>) => {
     const result = await apiRequest<{ user: SessionUser }>('/api/users/me', {
       method: 'PATCH', body: JSON.stringify(input),
     });
     setUser(result.data.user);
     await updateStoredUser(result.data.user);
+  }, []);
+
+  const changeEmail = useCallback(async (password: string, newEmail: string) => {
+    const result = await apiRequest<{ user: SessionUser }>('/api/users/me/change-email', {
+      method: 'POST', body: JSON.stringify({ password, email: newEmail }),
+    });
+    setUser(result.data.user);
+    await updateStoredUser(result.data.user);
+  }, []);
+
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    await apiRequest('/api/users/me/change-password', {
+      method: 'POST', body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    await clearStoredSession();
+    setUser(null);
   }, []);
 
   const deleteAccount = useCallback(async (password: string) => {
@@ -74,8 +92,26 @@ export function AuthProvider({ children }: { children: import('react').ReactNode
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ user, loading, login, register, logout, updateProfile, deleteAccount }), [
-    user, loading, login, register, logout, updateProfile, deleteAccount,
+  const value = useMemo(() => ({
+    user,
+    loading,
+    login,
+    register,
+    logout,
+    updateProfile,
+    changeEmail,
+    changePassword,
+    deleteAccount,
+  }), [
+    user,
+    loading,
+    login,
+    register,
+    logout,
+    updateProfile,
+    changeEmail,
+    changePassword,
+    deleteAccount,
   ]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

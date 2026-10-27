@@ -6,5 +6,6 @@ const { signatureSchema, completeUploadSchema } = require('../validators/video.v
 
 const router = express.Router();
 router.post('/signature', authenticate, validate(signatureSchema), controller.authorize);
+router.post('/avatar-signature', authenticate, validate(signatureSchema), controller.authorizeAvatar);
 router.post('/complete', authenticate, validate(completeUploadSchema), controller.complete);
 module.exports = router;

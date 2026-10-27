@@ -1,5 +1,6 @@
 const Video = require('../models/video.model');
 const ApiError = require('../utils/apiError.util');
+const { notifyNewVideo } = require('./notificationEvents.service');
 
 const parseProviderUrl = (rawUrl) => {
   let url;
@@ -61,7 +62,7 @@ const createExternalVideo = async (userId, input) => {
   const videoUrl = parsed.canonicalUrl;
   const existing = await Video.findOne({ creator: userId, videoUrl });
   if (existing) return existing;
-  return Video.create({
+  const created = await Video.create({
     title: input.title,
     description: input.description,
     category: input.category,
@@ -71,6 +72,9 @@ const createExternalVideo = async (userId, input) => {
     thumbnailUrl: parsed.provider === 'youtube' ? `https://img.youtube.com/vi/${parsed.id}/hqdefault.jpg` : '',
     sourceType: parsed.provider,
   });
+  // Only after the video is persisted; fire-and-forget and never rejects.
+  void notifyNewVideo(created);
+  return created;
 };
 
 module.exports = { parseProviderUrl, createExternalVideo };

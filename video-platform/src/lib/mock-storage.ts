@@ -1,9 +1,10 @@
 import { Platform } from 'react-native';
 import type { SessionUser, ApiEnvelope } from './api';
 import type { VideoRecord } from '@/types/video';
+import { VIDEO_CATEGORIES } from '@/constants/categories';
 
 const MOCK_USERS_KEY = 'streanub_mock_users';
-const MOCK_VIDEOS_KEY = 'streanub_mock_videos';
+const MOCK_VIDEOS_KEY = 'streanub_mock_videos_real_only';
 
 const inMemoryStore = new Map<string, string>();
 
@@ -52,103 +53,8 @@ const INITIAL_USERS: (SessionUser & { password: string })[] = [
   },
 ];
 
-const INITIAL_VIDEOS: VideoRecord[] = [
-  {
-    _id: 'vid_1',
-    title: 'React 19 Complete Guide & Practical Architecture',
-    description: 'A comprehensive walkthrough of React 19 features, hooks, component design, and state management.',
-    videoUrl: 'https://www.youtube.com/watch?v=8pDqJVdNa44',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=800',
-    creator: {
-      _id: 'user_sarah_2',
-      username: 'sarah_dev',
-      fullName: 'Sarah Chen',
-      avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=160',
-    },
-    category: 'Education',
-    visibility: 'public',
-    sourceType: 'youtube',
-    duration: 742,
-    views: 1420,
-    createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-  },
-  {
-    _id: 'vid_2',
-    title: 'Building Fluid Mobile & Web UI in React Native',
-    description: 'Learn how to create responsive, accessible layouts that adapt smoothly from phone screens to desktop browsers.',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800',
-    creator: {
-      _id: 'user_alex_1',
-      username: 'alex',
-      fullName: 'Alex Rivera',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=160',
-    },
-    category: 'Technology',
-    visibility: 'public',
-    sourceType: 'cloudinary',
-    duration: 596,
-    views: 980,
-    createdAt: new Date(Date.now() - 86400000 * 4).toISOString(),
-  },
-  {
-    _id: 'vid_3',
-    title: 'Design Systems & Component Tokens',
-    description: 'How to build scalable, themeable component libraries using design tokens and CSS variables.',
-    videoUrl: 'https://vimeo.com/76979871',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?w=800',
-    creator: {
-      _id: 'user_sarah_2',
-      username: 'sarah_dev',
-      fullName: 'Sarah Chen',
-      avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=160',
-    },
-    category: 'Design',
-    visibility: 'public',
-    sourceType: 'vimeo',
-    duration: 480,
-    views: 654,
-    createdAt: new Date(Date.now() - 86400000 * 6).toISOString(),
-  },
-  {
-    _id: 'vid_4',
-    title: 'Lo-Fi Chill Coding Beats & Study Stream',
-    description: 'Relaxing ambient beats for coding sessions, problem solving, and late night development.',
-    videoUrl: 'https://www.youtube.com/watch?v=jfKfPfyJRdk',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800',
-    creator: {
-      _id: 'user_alex_1',
-      username: 'alex',
-      fullName: 'Alex Rivera',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=160',
-    },
-    category: 'Music',
-    visibility: 'public',
-    sourceType: 'youtube',
-    duration: 3600,
-    views: 3120,
-    createdAt: new Date(Date.now() - 86400000 * 8).toISOString(),
-  },
-  {
-    _id: 'vid_5',
-    title: 'Live Coding: Interactive Dashboard in React',
-    description: 'Building an interactive video analytics dashboard with real-time state and responsive layouts.',
-    videoUrl: 'https://www.twitch.tv/videos/1234567890',
-    thumbnailUrl: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800',
-    creator: {
-      _id: 'user_alex_1',
-      username: 'alex',
-      fullName: 'Alex Rivera',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=160',
-    },
-    category: 'Technology',
-    visibility: 'public',
-    sourceType: 'twitch',
-    duration: 1820,
-    views: 840,
-    createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
-  },
-];
+// No predefined/default videos — only real user uploads via link or file are kept
+const INITIAL_VIDEOS: VideoRecord[] = [];
 
 export function getMockUsers(): (SessionUser & { password: string })[] {
   const raw = getStorageItem(MOCK_USERS_KEY);
@@ -165,6 +71,109 @@ export function getMockUsers(): (SessionUser & { password: string })[] {
 
 export function saveMockUsers(users: (SessionUser & { password: string })[]): void {
   setStorageItem(MOCK_USERS_KEY, JSON.stringify(users));
+}
+
+const MOCK_SUBSCRIPTIONS_KEY = 'streanub_mock_subscriptions';
+const MOCK_INTERACTIONS_KEY = 'streanub_mock_interactions';
+const MOCK_COMMENTS_KEY = 'streanub_mock_comments';
+const MOCK_REVIEWS_KEY = 'streanub_mock_reviews';
+
+export interface MockSubscription {
+  subscriberId: string;
+  creatorId: string;
+  createdAt: string;
+}
+
+export interface MockReview {
+  _id: string;
+  creatorId: string;
+  reviewer: {
+    _id: string;
+    username: string;
+    fullName: string;
+    avatar?: string;
+  };
+  rating: number;
+  comment?: string;
+  createdAt: string;
+}
+
+export function getMockReviews(): MockReview[] {
+  const raw = getStorageItem(MOCK_REVIEWS_KEY);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function saveMockReviews(items: MockReview[]): void {
+  setStorageItem(MOCK_REVIEWS_KEY, JSON.stringify(items));
+}
+
+export interface MockInteraction {
+  userId: string;
+  videoId: string;
+  liked?: boolean;
+  disliked?: boolean;
+  watchLater?: boolean;
+  watchedAt?: string;
+}
+
+export interface MockComment {
+  _id: string;
+  videoId: string;
+  user: {
+    _id: string;
+    username: string;
+    fullName: string;
+    avatar?: string;
+  };
+  text: string;
+  createdAt: string;
+}
+
+export function getMockSubscriptions(): MockSubscription[] {
+  const raw = getStorageItem(MOCK_SUBSCRIPTIONS_KEY);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function saveMockSubscriptions(items: MockSubscription[]): void {
+  setStorageItem(MOCK_SUBSCRIPTIONS_KEY, JSON.stringify(items));
+}
+
+export function getMockInteractions(): MockInteraction[] {
+  const raw = getStorageItem(MOCK_INTERACTIONS_KEY);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function saveMockInteractions(items: MockInteraction[]): void {
+  setStorageItem(MOCK_INTERACTIONS_KEY, JSON.stringify(items));
+}
+
+export function getMockComments(): MockComment[] {
+  const raw = getStorageItem(MOCK_COMMENTS_KEY);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function saveMockComments(items: MockComment[]): void {
+  setStorageItem(MOCK_COMMENTS_KEY, JSON.stringify(items));
 }
 
 export function getMockVideos(): VideoRecord[] {
@@ -345,16 +354,123 @@ export async function handleMockRequest<T>(
     }
   }
 
+  if (pathname === '/api/users/me/change-password' && method === 'POST') {
+    if (!currentUser) throw new Error('Authentication required.');
+    const { currentPassword, newPassword } = bodyData;
+    if (!currentPassword || !newPassword) throw new Error('Current and new password are required.');
+    if (newPassword.length < 8) throw new Error('New password must be at least 8 characters.');
+    const users = getMockUsers();
+    const userIndex = users.findIndex((u) => u.id === currentUser.id);
+    if (userIndex === -1) throw new Error('User not found.');
+    if (users[userIndex].password !== currentPassword) {
+      throw new Error('Current password is incorrect');
+    }
+    if (currentPassword === newPassword) {
+      throw new Error('New password must be different from your current password.');
+    }
+    users[userIndex].password = newPassword;
+    saveMockUsers(users);
+    return { success: true, message: 'Password changed successfully. Please sign in again.', data: null as unknown as T };
+  }
+
+  if (pathname === '/api/users/me/change-email' && method === 'POST') {
+    if (!currentUser) throw new Error('Authentication required.');
+    const { password, email } = bodyData;
+    if (!password || !email) throw new Error('Password and email are required.');
+    const users = getMockUsers();
+    const userIndex = users.findIndex((u) => u.id === currentUser.id);
+    if (userIndex === -1) throw new Error('User not found.');
+    if (users[userIndex].password !== password) {
+      throw new Error('Current password is incorrect');
+    }
+    const normalized = email.trim().toLowerCase();
+    const conflict = users.find((u) => u.id !== currentUser.id && u.email.toLowerCase() === normalized);
+    if (conflict) throw new Error('Email is already registered.');
+    users[userIndex].email = normalized;
+    saveMockUsers(users);
+    const { password: _, ...safeUser } = users[userIndex];
+    return { success: true, message: 'Email changed successfully', data: { user: safeUser } as unknown as T };
+  }
+
+  // 2b. Public User Profile route
+  if (pathname.startsWith('/api/users/') && pathname !== '/api/users/me' && method === 'GET') {
+    const targetUserId = decodeURIComponent(pathname.replace('/api/users/', ''));
+    const users = getMockUsers();
+    const targetUser = users.find((u) => u.id === targetUserId);
+    if (!targetUser) {
+      const videos = getMockVideos();
+      const videoWithCreator = videos.find((v) => {
+        const cId = typeof v.creator === 'object' ? v.creator?._id : v.creator;
+        return cId === targetUserId;
+      });
+      if (videoWithCreator && typeof videoWithCreator.creator === 'object' && videoWithCreator.creator) {
+        const c = videoWithCreator.creator;
+        return {
+          success: true,
+          data: {
+            user: {
+              id: c._id,
+              _id: c._id,
+              username: c.username,
+              fullName: c.fullName,
+              avatar: c.avatar,
+              bio: '',
+              role: 'creator',
+            },
+          } as unknown as T,
+        };
+      }
+      throw new Error('User not found.');
+    }
+    const { password: _, ...safeUser } = targetUser;
+    return {
+      success: true,
+      data: {
+        user: {
+          ...safeUser,
+          _id: safeUser.id,
+        },
+      } as unknown as T,
+    };
+  }
+
   // 3. Videos routes
   if (pathname === '/api/videos' && method === 'GET') {
     const videos = getMockVideos();
     const category = params.get('category');
-    const limit = parseInt(params.get('limit') || '50', 10);
+    const creatorParam = params.get('creator');
+    const limit = Math.min(50, Math.max(1, parseInt(params.get('limit') || '20', 10)));
+    const page = Math.max(1, parseInt(params.get('page') || '1', 10));
     let filtered = videos.filter((v) => v.visibility === 'public');
-    if (category && category !== 'All') {
-      filtered = filtered.filter((v) => v.category.toLowerCase() === category.toLowerCase());
+    if (creatorParam) {
+      filtered = filtered.filter((v) => {
+        const creatorId = typeof v.creator === 'object' ? v.creator?._id : v.creator;
+        return creatorId === creatorParam;
+      });
     }
-    return { success: true, data: filtered.slice(0, limit) as unknown as T };
+    if (category && category.trim() && category.trim().toLowerCase() !== 'all') {
+      const cat = category.trim().toLowerCase();
+      if (cat === 'other') {
+        filtered = filtered.filter(
+          (v) =>
+            !v.category ||
+            v.category.toLowerCase() === 'other' ||
+            v.category.toLowerCase() === 'general' ||
+            !VIDEO_CATEGORIES.some((c) => c.toLowerCase() === (v.category || '').toLowerCase())
+        );
+      } else {
+        filtered = filtered.filter((v) => (v.category || '').toLowerCase() === cat);
+      }
+    }
+    const total = filtered.length;
+    const totalPages = Math.ceil(total / limit) || 1;
+    const startIndex = (page - 1) * limit;
+    const paginated = filtered.slice(startIndex, startIndex + limit);
+    return {
+      success: true,
+      data: paginated as unknown as T,
+      pagination: { page, limit, total, totalPages },
+    } as unknown as ApiEnvelope<T>;
   }
 
   if (pathname === '/api/videos/mine' && method === 'GET') {
@@ -367,6 +483,205 @@ export async function handleMockRequest<T>(
     return { success: true, data: mine as unknown as T };
   }
 
+  // 3a. Library routes
+  if (pathname === '/api/videos/library/watch-later' && method === 'GET') {
+    if (!currentUser) throw new Error('Authentication required.');
+    const interactions = getMockInteractions().filter((i) => i.userId === currentUser.id && i.watchLater);
+    const videos = getMockVideos();
+    const list = interactions
+      .map((i) => videos.find((v) => v._id === i.videoId))
+      .filter((v): v is VideoRecord => Boolean(v && v.visibility === 'public'));
+    return { success: true, data: list as unknown as T };
+  }
+
+  if (pathname === '/api/videos/library/liked' && method === 'GET') {
+    if (!currentUser) throw new Error('Authentication required.');
+    const interactions = getMockInteractions().filter((i) => i.userId === currentUser.id && i.liked);
+    const videos = getMockVideos();
+    const list = interactions
+      .map((i) => videos.find((v) => v._id === i.videoId))
+      .filter((v): v is VideoRecord => Boolean(v && v.visibility === 'public'));
+    return { success: true, data: list as unknown as T };
+  }
+
+  if (pathname === '/api/videos/library/history') {
+    if (!currentUser) throw new Error('Authentication required.');
+    if (method === 'GET') {
+      const interactions = getMockInteractions()
+        .filter((i) => i.userId === currentUser.id && i.watchedAt)
+        .sort((a, b) => new Date(b.watchedAt || '').getTime() - new Date(a.watchedAt || '').getTime());
+      const videos = getMockVideos();
+      const list = interactions
+        .map((i) => {
+          const v = videos.find((vid) => vid._id === i.videoId);
+          return v ? { ...v, watchedAt: i.watchedAt } : null;
+        })
+        .filter((v): v is VideoRecord & { watchedAt: string } => Boolean(v && v.visibility === 'public'));
+      return { success: true, data: list as unknown as T };
+    }
+    if (method === 'DELETE') {
+      const interactions = getMockInteractions().map((i) =>
+        i.userId === currentUser.id ? { ...i, watchedAt: undefined } : i
+      );
+      saveMockInteractions(interactions);
+      return { success: true, message: 'History cleared', data: null as unknown as T };
+    }
+  }
+
+  if (pathname.startsWith('/api/videos/library/history/') && method === 'DELETE') {
+    if (!currentUser) throw new Error('Authentication required.');
+    const videoId = decodeURIComponent(pathname.replace('/api/videos/library/history/', ''));
+    const interactions = getMockInteractions().map((i) =>
+      i.userId === currentUser.id && i.videoId === videoId ? { ...i, watchedAt: undefined } : i
+    );
+    saveMockInteractions(interactions);
+    return { success: true, message: 'History item removed', data: null as unknown as T };
+  }
+
+  // 3b. Video interaction routes
+  if (pathname.match(/^\/api\/videos\/[^/]+\/view$/) && method === 'POST') {
+    const videoId = pathname.split('/')[3];
+    const videos = getMockVideos();
+    const index = videos.findIndex((v) => v._id === videoId);
+    let views = 1;
+    if (index !== -1) {
+      videos[index].views = (videos[index].views || 0) + 1;
+      views = videos[index].views || 1;
+      saveMockVideos(videos);
+    }
+    return { success: true, data: { views } as unknown as T };
+  }
+
+  if (pathname.match(/^\/api\/videos\/[^/]+\/like$/) && method === 'POST') {
+    if (!currentUser) throw new Error('Authentication required.');
+    const videoId = pathname.split('/')[3];
+    const action = bodyData.action || 'like'; // 'like', 'dislike', 'none'
+    const interactions = getMockInteractions();
+    const idx = interactions.findIndex((i) => i.userId === currentUser.id && i.videoId === videoId);
+    const existing = idx !== -1 ? interactions[idx] : { userId: currentUser.id, videoId };
+
+    if (action === 'like') {
+      existing.liked = true;
+      existing.disliked = false;
+    } else if (action === 'dislike') {
+      existing.liked = false;
+      existing.disliked = true;
+    } else {
+      existing.liked = false;
+      existing.disliked = false;
+    }
+
+    if (idx !== -1) interactions[idx] = existing;
+    else interactions.push(existing);
+    saveMockInteractions(interactions);
+
+    const likeCount = interactions.filter((i) => i.videoId === videoId && i.liked).length;
+    return {
+      success: true,
+      data: {
+        liked: action === 'like',
+        disliked: action === 'dislike',
+        likeCount,
+      } as unknown as T,
+    };
+  }
+
+  if (pathname.match(/^\/api\/videos\/[^/]+\/interaction$/) && method === 'GET') {
+    const videoId = pathname.split('/')[3];
+    const interactions = getMockInteractions();
+    const userInter = currentUser
+      ? interactions.find((i) => i.userId === currentUser.id && i.videoId === videoId)
+      : null;
+    const likeCount = interactions.filter((i) => i.videoId === videoId && i.liked).length;
+    return {
+      success: true,
+      data: {
+        liked: Boolean(userInter?.liked),
+        disliked: Boolean(userInter?.disliked),
+        watchLater: Boolean(userInter?.watchLater),
+        likeCount,
+      } as unknown as T,
+    };
+  }
+
+  if (pathname.match(/^\/api\/videos\/[^/]+\/watch-later$/)) {
+    if (!currentUser) throw new Error('Authentication required.');
+    const videoId = pathname.split('/')[3];
+    const save = method === 'POST';
+    const interactions = getMockInteractions();
+    const idx = interactions.findIndex((i) => i.userId === currentUser.id && i.videoId === videoId);
+    if (idx !== -1) {
+      interactions[idx].watchLater = save;
+    } else {
+      interactions.push({ userId: currentUser.id, videoId, watchLater: save });
+    }
+    saveMockInteractions(interactions);
+    return { success: true, data: { watchLater: save } as unknown as T };
+  }
+
+  if (pathname.match(/^\/api\/videos\/[^/]+\/history$/) && method === 'POST') {
+    if (currentUser) {
+      const videoId = pathname.split('/')[3];
+      const interactions = getMockInteractions();
+      const idx = interactions.findIndex((i) => i.userId === currentUser.id && i.videoId === videoId);
+      if (idx !== -1) {
+        interactions[idx].watchedAt = new Date().toISOString();
+      } else {
+        interactions.push({
+          userId: currentUser.id,
+          videoId,
+          watchedAt: new Date().toISOString(),
+        });
+      }
+      saveMockInteractions(interactions);
+    }
+    return { success: true, data: null as unknown as T };
+  }
+
+  // 3c. Video comment routes
+  if (pathname.match(/^\/api\/videos\/[^/]+\/comments$/)) {
+    const videoId = pathname.split('/')[3];
+    if (method === 'GET') {
+      const comments = getMockComments()
+        .filter((c) => c.videoId === videoId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      return { success: true, data: comments as unknown as T };
+    }
+    if (method === 'POST') {
+      if (!currentUser) throw new Error('Authentication required.');
+      const text = (bodyData.text || '').trim();
+      if (!text) throw new Error('Comment text is required.');
+      const newComment: MockComment = {
+        _id: `com_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        videoId,
+        user: {
+          _id: currentUser.id,
+          username: currentUser.username,
+          fullName: currentUser.fullName,
+          avatar: currentUser.avatar,
+        },
+        text,
+        createdAt: new Date().toISOString(),
+      };
+      const comments = getMockComments();
+      comments.unshift(newComment);
+      saveMockComments(comments);
+      return { success: true, data: newComment as unknown as T };
+    }
+  }
+
+  if (pathname.match(/^\/api\/videos\/[^/]+\/comments\/[^/]+$/) && method === 'DELETE') {
+    if (!currentUser) throw new Error('Authentication required.');
+    const commentId = pathname.split('/')[5];
+    const comments = getMockComments();
+    const comment = comments.find((c) => c._id === commentId);
+    if (!comment) throw new Error('Comment not found.');
+    if (comment.user._id !== currentUser.id) throw new Error('You can only delete your own comments.');
+    saveMockComments(comments.filter((c) => c._id !== commentId));
+    return { success: true, message: 'Comment deleted', data: null as unknown as T };
+  }
+
+  // 3d. Single video get & delete
   if (pathname.startsWith('/api/videos/') && pathname !== '/api/videos/mine') {
     const videoId = decodeURIComponent(pathname.replace('/api/videos/', ''));
     const videos = getMockVideos();
@@ -391,6 +706,7 @@ export async function handleMockRequest<T>(
     const q = (params.get('q') || '').trim().toLowerCase();
     const creator = (params.get('creator') || '').trim().toLowerCase();
     const sourceType = params.get('sourceType');
+    const category = params.get('category');
     const page = parseInt(params.get('page') || '1', 10);
     const limit = parseInt(params.get('limit') || '20', 10);
 
@@ -398,6 +714,21 @@ export async function handleMockRequest<T>(
 
     if (sourceType && sourceType !== 'all') {
       list = list.filter((v) => v.sourceType === sourceType);
+    }
+
+    if (category && category.trim() && category.trim().toLowerCase() !== 'all') {
+      const cat = category.trim().toLowerCase();
+      if (cat === 'other') {
+        list = list.filter(
+          (v) =>
+            !v.category ||
+            v.category.toLowerCase() === 'other' ||
+            v.category.toLowerCase() === 'general' ||
+            !VIDEO_CATEGORIES.some((c) => c.toLowerCase() === (v.category || '').toLowerCase())
+        );
+      } else {
+        list = list.filter((v) => (v.category || '').toLowerCase() === cat);
+      }
     }
 
     if (creator) {
@@ -468,7 +799,7 @@ export async function handleMockRequest<T>(
         fullName: currentUser.fullName,
         avatar: currentUser.avatar,
       },
-      category: category || 'General',
+      category: category || 'Other',
       visibility: visibility || 'public',
       sourceType: 'cloudinary',
       duration: 120,
@@ -516,7 +847,7 @@ export async function handleMockRequest<T>(
         fullName: currentUser.fullName,
         avatar: currentUser.avatar,
       },
-      category: category || 'General',
+      category: category || 'Other',
       visibility: visibility || 'public',
       sourceType,
       duration: 180,
@@ -527,6 +858,196 @@ export async function handleMockRequest<T>(
     videos.unshift(newVideo);
     saveMockVideos(videos);
     return { success: true, message: 'External video saved.', data: newVideo as unknown as T };
+  }
+
+  // 8. Subscription routes
+  if (pathname.startsWith('/api/subscriptions/status/') && method === 'GET') {
+    const creatorId = decodeURIComponent(pathname.replace('/api/subscriptions/status/', ''));
+    const subscriptions = getMockSubscriptions();
+    const isSub = currentUser
+      ? subscriptions.some((s) => s.subscriberId === currentUser.id && s.creatorId === creatorId)
+      : false;
+    const subscriberCount = subscriptions.filter((s) => s.creatorId === creatorId).length;
+    return {
+      success: true,
+      data: { isSubscribed: isSub, subscriberCount } as unknown as T,
+    };
+  }
+
+  if (pathname.match(/^\/api\/subscriptions\/[^/]+$/) && method === 'POST') {
+    if (!currentUser) throw new Error('Authentication required.');
+    const creatorId = decodeURIComponent(pathname.replace('/api/subscriptions/', ''));
+    if (creatorId === currentUser.id) throw new Error('You cannot subscribe to yourself.');
+    const subscriptions = getMockSubscriptions();
+    if (!subscriptions.some((s) => s.subscriberId === currentUser.id && s.creatorId === creatorId)) {
+      subscriptions.push({
+        subscriberId: currentUser.id,
+        creatorId,
+        createdAt: new Date().toISOString(),
+      });
+      saveMockSubscriptions(subscriptions);
+    }
+    const subscriberCount = subscriptions.filter((s) => s.creatorId === creatorId).length;
+    return {
+      success: true,
+      message: 'Subscribed successfully',
+      data: { subscribed: true, subscriberCount } as unknown as T,
+    };
+  }
+
+  if (pathname.match(/^\/api\/subscriptions\/[^/]+$/) && method === 'DELETE') {
+    if (!currentUser) throw new Error('Authentication required.');
+    const creatorId = decodeURIComponent(pathname.replace('/api/subscriptions/', ''));
+    let subscriptions = getMockSubscriptions();
+    subscriptions = subscriptions.filter(
+      (s) => !(s.subscriberId === currentUser.id && s.creatorId === creatorId)
+    );
+    saveMockSubscriptions(subscriptions);
+    const subscriberCount = subscriptions.filter((s) => s.creatorId === creatorId).length;
+    return {
+      success: true,
+      message: 'Unsubscribed successfully',
+      data: { subscribed: false, subscriberCount } as unknown as T,
+    };
+  }
+
+  if (pathname === '/api/subscriptions' && method === 'GET') {
+    if (!currentUser) throw new Error('Authentication required.');
+    const subscriptions = getMockSubscriptions().filter((s) => s.subscriberId === currentUser.id);
+    const users = getMockUsers();
+    const videos = getMockVideos();
+    const creators = subscriptions.map((s) => {
+      const u = users.find((usr) => usr.id === s.creatorId);
+      const subCount = getMockSubscriptions().filter((sub) => sub.creatorId === s.creatorId).length;
+      const vidCount = videos.filter((v) => {
+        const cId = typeof v.creator === 'object' ? v.creator?._id : v.creator;
+        return cId === s.creatorId && v.visibility === 'public';
+      }).length;
+      return {
+        _id: s.creatorId,
+        username: u?.username || 'creator',
+        fullName: u?.fullName || 'Creator',
+        avatar: u?.avatar || '',
+        bio: u?.bio || '',
+        subscriberCount: subCount,
+        videoCount: vidCount,
+      };
+    });
+    return { success: true, data: creators as unknown as T };
+  }
+
+  if (pathname === '/api/subscriptions/feed' && method === 'GET') {
+    if (!currentUser) throw new Error('Authentication required.');
+    const subscriptions = getMockSubscriptions().filter((s) => s.subscriberId === currentUser.id);
+    const creatorIds = subscriptions.map((s) => s.creatorId);
+    const videos = getMockVideos().filter((v) => {
+      const cId = typeof v.creator === 'object' ? v.creator?._id : v.creator;
+      return creatorIds.includes(cId || '') && v.visibility === 'public';
+    });
+    return { success: true, data: videos as unknown as T };
+  }
+
+  // 9. Review routes
+  if (pathname.match(/^\/api\/users\/[^/]+\/reviews$/) && method === 'GET') {
+    const creatorId = pathname.split('/')[3];
+    const allReviews = getMockReviews().filter((r) => r.creatorId === creatorId);
+    const totalReviews = allReviews.length;
+    const averageRating =
+      totalReviews > 0
+        ? Number((allReviews.reduce((acc, r) => acc + r.rating, 0) / totalReviews).toFixed(1))
+        : 0;
+    const userReview = currentUser
+      ? allReviews.find((r) => r.reviewer._id === currentUser.id) || null
+      : null;
+    return {
+      success: true,
+      data: {
+        reviews: allReviews,
+        averageRating,
+        totalReviews,
+        userReview,
+      } as unknown as T,
+    };
+  }
+
+  if (pathname.match(/^\/api\/users\/[^/]+\/reviews$/) && method === 'POST') {
+    if (!currentUser) throw new Error('Authentication required.');
+    const creatorId = pathname.split('/')[3];
+    if (creatorId === currentUser.id) throw new Error('You cannot review yourself.');
+
+    const rating = Number(bodyData.rating);
+    if (!rating || rating < 1 || rating > 5) throw new Error('Rating must be between 1 and 5.');
+
+    const reviews = getMockReviews();
+    const existingIndex = reviews.findIndex(
+      (r) => r.creatorId === creatorId && r.reviewer._id === currentUser.id
+    );
+
+    const reviewObj: MockReview = {
+      _id: existingIndex !== -1 ? reviews[existingIndex]._id : `rev_${Date.now()}`,
+      creatorId,
+      reviewer: {
+        _id: currentUser.id,
+        username: currentUser.username,
+        fullName: currentUser.fullName,
+        avatar: currentUser.avatar,
+      },
+      rating,
+      comment: typeof bodyData.comment === 'string' ? bodyData.comment.trim() : '',
+      createdAt: new Date().toISOString(),
+    };
+
+    if (existingIndex !== -1) {
+      reviews[existingIndex] = reviewObj;
+    } else {
+      reviews.unshift(reviewObj);
+    }
+    saveMockReviews(reviews);
+
+    const creatorReviews = reviews.filter((r) => r.creatorId === creatorId);
+    const totalReviews = creatorReviews.length;
+    const averageRating = Number(
+      (creatorReviews.reduce((acc, r) => acc + r.rating, 0) / totalReviews).toFixed(1)
+    );
+
+    return {
+      success: true,
+      message: 'Review submitted successfully',
+      data: {
+        review: reviewObj,
+        averageRating,
+        totalReviews,
+      } as unknown as T,
+    };
+  }
+
+  if (pathname.match(/^\/api\/users\/[^/]+\/reviews\/[^/]+$/) && method === 'DELETE') {
+    if (!currentUser) throw new Error('Authentication required.');
+    const parts = pathname.split('/');
+    const creatorId = parts[3];
+    const reviewId = parts[5];
+
+    let reviews = getMockReviews();
+    reviews = reviews.filter(
+      (r) => !(r._id === reviewId && r.creatorId === creatorId && r.reviewer._id === currentUser.id)
+    );
+    saveMockReviews(reviews);
+
+    const creatorReviews = reviews.filter((r) => r.creatorId === creatorId);
+    const totalReviews = creatorReviews.length;
+    const averageRating =
+      totalReviews > 0
+        ? Number((creatorReviews.reduce((acc, r) => acc + r.rating, 0) / totalReviews).toFixed(1))
+        : 0;
+
+    return {
+      success: true,
+      message: 'Review deleted',
+      data: {
+        averageRating,
+        totalReviews,
+      } as unknown as T,
+    };
   }
 
   throw new Error(`Mock endpoint not found: ${method} ${pathname}`);

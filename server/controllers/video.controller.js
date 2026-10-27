@@ -15,8 +15,29 @@ const getVideos = async (req, res, next) => {
 
     const filter = { visibility: 'public' };
 
-    if (req.query.category) {
-      filter.category = req.query.category;
+    if (req.query.creator && typeof req.query.creator === 'string') {
+      const creatorId = req.query.creator.trim();
+      if (mongoose.Types.ObjectId.isValid(creatorId)) {
+        filter.creator = new mongoose.Types.ObjectId(creatorId);
+      }
+    }
+
+    if (req.query.category && typeof req.query.category === 'string') {
+      const cat = req.query.category.trim().slice(0, 60);
+      if (cat && cat.toLowerCase() !== 'all') {
+        if (cat.toLowerCase() === 'other') {
+          filter.$or = [
+            { category: new RegExp('^other$', 'i') },
+            { category: new RegExp('^general$', 'i') },
+            { category: { $exists: false } },
+            { category: null },
+            { category: '' },
+          ];
+        } else {
+          const escaped = cat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          filter.category = new RegExp(`^${escaped}$`, 'i');
+        }
+      }
     }
 
     const [videos, total] = await Promise.all([

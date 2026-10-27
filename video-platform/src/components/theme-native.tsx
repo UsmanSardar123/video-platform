@@ -52,14 +52,29 @@ export function ActivityIndicator(props: ActivityIndicatorProps) {
 
 export function ThemeToggleButton() {
   const { mode, toggleTheme } = useThemeMode();
-  const icon = mode === 'dark'
-    ? { ios: 'sun.max.fill', android: 'light_mode', web: 'light_mode' } as const
-    : { ios: 'moon.fill', android: 'dark_mode', web: 'dark_mode' } as const;
-  return <Pressable accessibilityRole="button" accessibilityLabel={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`} style={styles.themeButton} onPress={toggleTheme}>
-    <SymbolView name={icon} size={18} tintColor={Design.color.accent} />
-  </Pressable>;
+  const isDark = mode === 'dark';
+  const C = isDark ? Design.color : Design.light;
+  const icon = isDark
+    ? ({ ios: 'sun.max.fill', android: 'light_mode', web: 'light_mode' } as const)
+    : ({ ios: 'moon.fill', android: 'dark_mode', web: 'dark_mode' } as const);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Switch to ${isDark ? 'light' : 'dark'} mode`}
+      style={[
+        styles.themeButton,
+        {
+          backgroundColor: C.surfaceRaised,
+          borderColor: C.border,
+        },
+      ]}
+      onPress={toggleTheme}
+    >
+      <SymbolView name={icon} size={18} tintColor={C.accent} />
+    </Pressable>
+  );
 }
 
 const styles = StyleSheet.create({
-  themeButton: { minWidth: 44, minHeight: 44, paddingHorizontal: 10, justifyContent: 'center', alignItems: 'center', borderRadius: Design.radius.sm, backgroundColor: Design.color.surfaceRaised, borderWidth: 1, borderColor: Design.color.border },
+  themeButton: { minWidth: 44, minHeight: 44, paddingHorizontal: 10, justifyContent: 'center', alignItems: 'center', borderRadius: Design.radius.sm, borderWidth: 1 },
 });

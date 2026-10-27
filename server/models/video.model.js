@@ -47,7 +47,7 @@ const videoSchema = new mongoose.Schema(
       type: String,
       trim: true,
       maxlength: 60,
-      default: 'General',
+      default: 'Other',
     },
     visibility: {
       type: String,
@@ -70,6 +70,7 @@ const videoSchema = new mongoose.Schema(
 );
 
 videoSchema.index({ createdAt: -1 });
+videoSchema.index({ category: 1, visibility: 1, createdAt: -1 });
 videoSchema.index({ title: 'text', description: 'text' });
 
 module.exports =

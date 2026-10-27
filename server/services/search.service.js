@@ -4,7 +4,7 @@ const User = require('../models/user.model');
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const searchVideos = async ({ q = '', sourceType, creator = '', page = 1, limit = 20 }) => {
+const searchVideos = async ({ q = '', sourceType, creator = '', category = '', page = 1, limit = 20 }) => {
   const filter = { visibility: 'public' };
   if (sourceType) filter.sourceType = sourceType;
   if (creator) {
@@ -24,6 +24,32 @@ const searchVideos = async ({ q = '', sourceType, creator = '', page = 1, limit 
     const clauses = [{ $text: { $search: q } }];
     if (matchingUsers.length) clauses.push({ creator: { $in: matchingUsers.map((user) => user._id) } });
     filter.$or = clauses;
+  }
+
+  if (category && typeof category === 'string') {
+    const cat = category.trim().slice(0, 60);
+    if (cat && cat.toLowerCase() !== 'all') {
+      if (cat.toLowerCase() === 'other') {
+        const otherClause = {
+          $or: [
+            { category: new RegExp('^other$', 'i') },
+            { category: new RegExp('^general$', 'i') },
+            { category: { $exists: false } },
+            { category: null },
+            { category: '' },
+          ],
+        };
+        if (filter.$or) {
+          filter.$and = [otherClause, { $or: filter.$or }];
+          delete filter.$or;
+        } else {
+          filter.$or = otherClause.$or;
+        }
+      } else {
+        const escaped = escapeRegex(cat);
+        filter.category = new RegExp(`^${escaped}$`, 'i');
+      }
+    }
   }
 
   const [videos, total] = await Promise.all([

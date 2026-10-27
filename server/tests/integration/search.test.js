@@ -83,6 +83,34 @@ describe('public video search API', () => {
     }
   );
 
+  test('filters public search results by category', async () => {
+    Video.find.mockReturnValue(makeVideoQuery());
+    Video.countDocuments.mockResolvedValue(0);
+
+    const response = await request(app).get('/api/search?category=Gaming');
+
+    expect(response.status).toBe(200);
+    expect(Video.find).toHaveBeenCalledWith({
+      visibility: 'public',
+      category: /^Gaming$/i,
+    });
+  });
+
+  test('combines search text with category filter', async () => {
+    Video.find.mockReturnValue(makeVideoQuery());
+    mockUserLookup();
+    Video.countDocuments.mockResolvedValue(0);
+
+    const response = await request(app).get('/api/search?q=minecraft&category=Gaming');
+
+    expect(response.status).toBe(200);
+    expect(Video.find).toHaveBeenCalledWith({
+      visibility: 'public',
+      category: /^Gaming$/i,
+      $or: [{ $text: { $search: 'minecraft' } }],
+    });
+  });
+
   test('applies pagination and reports total result pages', async () => {
     const query = makeVideoQuery([{ _id: 'video21' }]);
     Video.find.mockReturnValue(query);

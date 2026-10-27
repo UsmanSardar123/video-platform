@@ -24,4 +24,59 @@ const deleteAccount = async (userId, password) => {
   } finally { await session.endSession(); }
 };
 
-module.exports = { deleteAccount };
+const changePassword = async (userId, currentPassword, newPassword) => {
+  const user = await User.findById(userId).select('+password');
+  if (!user) throw new ApiError(404, 'User not found');
+  if (!(await user.comparePassword(currentPassword))) {
+    throw new ApiError(401, 'Current password is incorrect');
+  }
+
+  if (currentPassword === newPassword) {
+    throw new ApiError(400, 'New password must be different from your current password');
+  }
+
+  user.password = newPassword;
+  await user.save();
+
+  // Invalidate all existing refresh tokens for security
+  await RefreshToken.updateMany(
+    { user: userId, revokedAt: null },
+    { $set: { revokedAt: new Date() } }
+  );
+
+  return { message: 'Password changed successfully. Please sign in again.' };
+};
+
+const changeEmail = async (userId, password, newEmail) => {
+  const user = await User.findById(userId).select('+password');
+  if (!user) throw new ApiError(404, 'User not found');
+  if (!(await user.comparePassword(password))) {
+    throw new ApiError(401, 'Current password is incorrect');
+  }
+
+  const normalized = newEmail.trim().toLowerCase();
+  if (user.email === normalized) {
+    throw new ApiError(400, 'New email must be different from current email');
+  }
+
+  const existing = await User.findOne({ email: normalized, _id: { $ne: userId } });
+  if (existing) {
+    throw new ApiError(409, 'Email is already registered');
+  }
+
+  user.email = normalized;
+  await user.save();
+
+  return {
+    id: user._id.toString(),
+    username: user.username,
+    email: user.email,
+    fullName: user.fullName,
+    avatar: user.avatar,
+    bio: user.bio,
+    role: user.role,
+    createdAt: user.createdAt,
+  };
+};
+
+module.exports = { deleteAccount, changePassword, changeEmail };

@@ -33,6 +33,16 @@ const validateEnv = () => {
         throw new Error(`${key} must be at least 32 characters long`);
       }
     }
+
+    const cloudinaryKeys = ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
+    const invalidCloudinary = cloudinaryKeys.filter(
+      (k) => !process.env[k] || process.env[k].startsWith('your_') || process.env[k].trim() === ''
+    );
+    if (invalidCloudinary.length > 0) {
+      console.warn(
+        `[WARNING] Cloudinary credentials not fully configured in server/.env: ${invalidCloudinary.join(', ')}. Local device video uploads will return an explicit 503 error identifying these variables until real credentials are provided.`
+      );
+    }
   }
 };
 

@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
-import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, TextInput, ThemeToggleButton, View } from '@/components/theme-native';
+import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StatusBar, Text, TextInput, ThemeToggleButton, View } from '@/components/theme-native';
 import { useAuth } from '@/contexts/auth-context';
+import { useThemeMode } from '@/contexts/theme-context';
 import { Design } from '@/constants/design';
 
 export default function AuthScreen() {
   const params = useLocalSearchParams<{ returnTo?: string }>();
+  const { mode } = useThemeMode();
+  const isDark = mode === 'dark';
+  const C = isDark ? Design.color : Design.light;
   // Direct sign-in and signup return to Home. Preserve supported protected
   // actions that redirected here for authentication.
-  const destination = params.returnTo === '/upload' || params.returnTo === '/main/edit-profile'
+  const destination = params.returnTo === '/upload' || params.returnTo === '/main/edit-profile' || params.returnTo === '/edit-profile'
     ? params.returnTo
     : '/main';
   const { user, loading: sessionLoading, login, register } = useAuth();
@@ -41,25 +45,40 @@ export default function AuthScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: C.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <KeyboardAvoidingView style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <View style={styles.topActions}><Pressable onPress={() => router.back()} accessibilityRole="button"><Text style={styles.back}>‹ Back</Text></Pressable><ThemeToggleButton /></View>
-          <View style={styles.brand}><View style={styles.brandMark}><Text style={styles.brandMarkText}>S</Text></View><Text style={styles.brandText}>Streanub</Text><Text style={styles.subtitle}>A home for videos and creators</Text></View>
-          <View style={styles.card}>
-            <View><Text style={styles.heading}>{isRegistering ? 'Create your account' : 'Welcome back'}</Text><Text style={styles.cardSubtitle}>{isRegistering ? 'Join the Streanub community.' : 'Sign in to continue to your account.'}</Text></View>
+          <View style={styles.topActions}><Pressable onPress={() => router.back()} accessibilityRole="button"><Text style={[styles.back, { color: C.secondary }]}>‹ Back</Text></Pressable><ThemeToggleButton /></View>
+          <View style={styles.brand}>
+            <View style={[styles.brandMark, { backgroundColor: isDark ? Design.color.accentSurface : '#fee2e2' }]}>
+              <Text style={[styles.brandMarkText, { color: C.accent }]}>S</Text>
+            </View>
+            <Text style={[styles.brandText, { color: C.text }]}>Streanub</Text>
+            <Text style={[styles.subtitle, { color: C.muted }]}>A home for videos and creators</Text>
+          </View>
+          <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }, !isDark && Design.shadow.sm]}>
+            <View>
+              <Text style={[styles.heading, { color: C.text }]}>{isRegistering ? 'Create your account' : 'Welcome back'}</Text>
+              <Text style={[styles.cardSubtitle, { color: C.muted }]}>{isRegistering ? 'Join the Streanub community.' : 'Sign in to continue to your account.'}</Text>
+            </View>
             {isRegistering && <>
-              <TextInput accessibilityLabel="Username" style={styles.input} placeholder="Username" placeholderTextColor={Design.color.muted} value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} maxLength={30} />
-              <TextInput accessibilityLabel="Full name, optional" style={styles.input} placeholder="Full name (optional)" placeholderTextColor={Design.color.muted} value={fullName} onChangeText={setFullName} maxLength={80} />
+              <TextInput accessibilityLabel="Username" style={[styles.input, { backgroundColor: C.surfaceRaised, borderColor: C.border, color: C.text }]} placeholder="Username" placeholderTextColor={C.muted} value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} maxLength={30} />
+              <TextInput accessibilityLabel="Full name, optional" style={[styles.input, { backgroundColor: C.surfaceRaised, borderColor: C.border, color: C.text }]} placeholder="Full name (optional)" placeholderTextColor={C.muted} value={fullName} onChangeText={setFullName} maxLength={80} />
             </>}
-            <TextInput accessibilityLabel="Email address" style={styles.input} placeholder="Email address" placeholderTextColor={Design.color.muted} value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" textContentType="emailAddress" />
-            <View style={styles.passwordRow}><TextInput accessibilityLabel="Password" style={styles.passwordInput} placeholder="Password" placeholderTextColor={Design.color.muted} value={password} onChangeText={setPassword} secureTextEntry={!showPassword} textContentType={isRegistering ? 'newPassword' : 'password'} maxLength={128} /><Pressable accessibilityRole="button" accessibilityLabel={showPassword ? 'Hide password' : 'Show password'} style={styles.passwordToggle} onPress={() => setShowPassword((current) => !current)}><Text style={styles.passwordToggleText}>{showPassword ? 'Hide' : 'Show'}</Text></Pressable></View>
+            <TextInput accessibilityLabel="Email address" style={[styles.input, { backgroundColor: C.surfaceRaised, borderColor: C.border, color: C.text }]} placeholder="Email address" placeholderTextColor={C.muted} value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" textContentType="emailAddress" />
+            <View style={[styles.passwordRow, { backgroundColor: C.surfaceRaised, borderColor: C.border }]}>
+              <TextInput accessibilityLabel="Password" style={[styles.passwordInput, { color: C.text }]} placeholder="Password" placeholderTextColor={C.muted} value={password} onChangeText={setPassword} secureTextEntry={!showPassword} textContentType={isRegistering ? 'newPassword' : 'password'} maxLength={128} />
+              <Pressable accessibilityRole="button" accessibilityLabel={showPassword ? 'Hide password' : 'Show password'} style={styles.passwordToggle} onPress={() => setShowPassword((current) => !current)}>
+                <Text style={[styles.passwordToggleText, { color: C.accent }]}>{showPassword ? 'Hide' : 'Show'}</Text>
+              </Pressable>
+            </View>
             {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-            <Pressable disabled={busy || sessionLoading} style={[styles.button, (busy || sessionLoading) && styles.disabled]} onPress={submit} accessibilityRole="button">
+            <Pressable disabled={busy || sessionLoading} style={[styles.button, { backgroundColor: C.accent }, (busy || sessionLoading) && styles.disabled]} onPress={submit} accessibilityRole="button">
               {busy || sessionLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{isRegistering ? 'Create account' : 'Sign in'}</Text>}
             </Pressable>
             <Pressable accessibilityRole="button" disabled={busy} style={styles.toggleButton} onPress={() => { setError(''); setIsRegistering((value) => !value); }}>
-              <Text style={styles.toggle}>{isRegistering ? 'Already have an account? Sign in' : 'New here? Create an account'}</Text>
+              <Text style={[styles.toggle, { color: C.accent }]}>{isRegistering ? 'Already have an account? Sign in' : 'New here? Create an account'}</Text>
             </Pressable>
           </View>
         </ScrollView>
