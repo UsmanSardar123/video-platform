@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { apiRequest } from './api';
 import type {
   VideoRecord,
@@ -222,3 +223,73 @@ export async function deleteCreatorReview(
   );
   return res.data;
 }
+
+export async function uploadAvatarImage(asset: {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  file?: any;
+}): Promise<string> {
+  const authRes = await apiRequest<{
+    apiKey: string;
+    timestamp: number;
+    publicId: string;
+    uploadUrl: string;
+    signature: string;
+    allowedFormats: string[];
+  }>('/api/uploads/avatar-signature', { method: 'POST', body: JSON.stringify({}) });
+
+  const auth = authRes.data;
+
+  // Mock / offline environment support
+  if (!auth.uploadUrl || auth.uploadUrl === 'mock' || !auth.uploadUrl.startsWith('http')) {
+    return 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80';
+  }
+
+  const body = new FormData();
+  body.append('api_key', auth.apiKey);
+  body.append('timestamp', String(auth.timestamp));
+  body.append('public_id', auth.publicId);
+  body.append('overwrite', 'false');
+  body.append('allowed_formats', auth.allowedFormats.join(','));
+  body.append('signature', auth.signature);
+
+  if (Platform.OS === 'web' && (asset as any).file) {
+    body.append('file', (asset as any).file, asset.fileName || 'avatar.jpg');
+  } else {
+    body.append('file', {
+      uri: asset.uri,
+      name: asset.fileName || 'avatar.jpg',
+      type: asset.mimeType || 'image/jpeg',
+    } as never);
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('POST', auth.uploadUrl);
+    request.timeout = 60 * 1000;
+    request.onerror = () => reject(new Error('Network error while uploading photo. Please try again.'));
+    request.ontimeout = () => reject(new Error('Upload timed out. Please try again.'));
+    request.onload = () => {
+      let response: any;
+      try {
+        response = JSON.parse(request.responseText);
+      } catch {
+        reject(new Error('Upload service returned an invalid response.'));
+        return;
+      }
+      if (request.status < 200 || request.status >= 300) {
+        reject(new Error(response.error?.message || 'Avatar upload failed.'));
+        return;
+      }
+      const secureUrl = response.secure_url || response.url;
+      if (!secureUrl) {
+        reject(new Error('No image URL returned from upload provider.'));
+        return;
+      }
+      resolve(secureUrl);
+    };
+    request.send(body);
+  });
+}
+

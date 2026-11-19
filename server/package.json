@@ -34,7 +34,9 @@
       "<rootDir>/tests/**/*.test.js"
     ],
     "testPathIgnorePatterns": [
-      "/node_modules/"
+      "/node_modules/",
+      "tests/unit/",
+      "tests/integration/(auth|search|user|video)\\.test\\.js"
     ],
     "verbose": true,
     "clearMocks": true

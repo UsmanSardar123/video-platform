@@ -18,6 +18,7 @@ const list = async (userId, { page, limit, unreadOnly }) => {
       .skip((page - 1) * limit)
       .limit(limit)
       .populate('actor', 'username fullName avatar')
+      .populate('video', 'title thumbnailUrl duration')
       .lean(),
     Notification.countDocuments(filter),
   ]);

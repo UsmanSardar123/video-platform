@@ -146,7 +146,8 @@ After a significant feature or architecture change:
 - **Backend Endpoints Registered** (`server/routes/user.routes.js` & `server/routes/upload.routes.js`):
   - `POST /api/users/me/change-password`: Re-verifies current password via bcrypt, validates password complexity (>= 8 chars), updates hash, and revokes active refresh tokens.
   - `POST /api/users/me/change-email`: Re-verifies current password, enforces email syntax and uniqueness, and updates email.
-  - `POST /api/upload/avatar-signature`: Securely issues Cloudinary signature specifically for avatar images in an isolated `avatars/{userId}` folder without exposing API secrets.
+  - `POST /api/uploads/avatar-signature` (also aliased at `/api/upload/avatar-signature`): Securely issues Cloudinary signature specifically for avatar images in an isolated `avatars/{userId}` folder without exposing API secrets.
+  - `PATCH /api/users/me`: Updates profile fields including `avatar`, validating that the URL starts with `http://` or `https://` (`/^https?:\/\//i`).
 - **Contexts & Preference Synchronization**:
   - `SettingsProvider` (`video-platform/src/contexts/settings-context.tsx`): Persists and manages playback (autoplay, startMuted, dataSaver), notification (subscriptions, comments), and privacy (pauseWatchHistory) preferences.
   - `ThemeModeProvider` (`video-platform/src/contexts/theme-context.tsx`): Extended to support `system`, `light`, and `dark` modes with live system appearance listener sync.
@@ -162,6 +163,7 @@ After a significant feature or architecture change:
   - Direct access to notifications with reactive unread badge (`useNotifications`), search (`/main/explore`), settings (`/settings`), and light/dark theme toggle.
 - **Account & Channel Card**:
   - YouTube-style horizontal identity card with avatar, full name, `@username`, and `View channel ›` link.
+  - Interactive profile picture upload: tapping directly on the profile picture (or camera badge) in Profile or Edit Profile opens `ImagePicker`, requests a signed Cloudinary authorization (`/api/upload/avatar-signature`), uploads the image using `uploadAvatarImage` via native `XMLHttpRequest` multipart streaming, and calls `updateProfile({ avatar: secure_url })`, cleanly avoiding local `file:///` URIs from reaching backend validation.
   - Live statistics: subscriber count, total uploads, and community review ratings.
   - Quick action chips row: `Edit profile`, `Upload video`, `Channel reviews`, `Settings`, and `Sign out`.
 - **History Carousel**:
@@ -174,6 +176,35 @@ After a significant feature or architecture change:
 - **Playlist Management & Utility Shortcuts**:
   - Categorized tabs (`Your Videos`, `Watch Later`, `Liked`) with contextual item removal (delete uploaded video, remove from watch later, unlike).
   - Quick utility list items for `Your videos`, `Settings`, `Sign out`, and password-confirmed `Delete account`.
+
+### YouTube-Inspired Subscriptions Screen (`video-platform/src/app/main/subscriptions.tsx`)
+
+- **Creator Carousel**: Horizontal avatar list of subscribed creators with an "All" chip, individual channel filtering, and an "All ›" Manage button.
+- **Manage Subscriptions Modal**: Searchable bottom sheet of subscribed creators with one-tap unsubscribe and channel notification bell state toggles (`all` / `personalized` / `none`).
+- **Feed Filter Chips**: YouTube-style pills for `All`, `Today` (last 24h), and `Unwatched` (cross-referenced against watch history).
+- **Active Channel Filter Banner**: Highlights selected channel with "Visit Channel →" and "Clear filter" buttons.
+
+### YouTube-Inspired Notifications Center (`video-platform/src/app/notifications.tsx`)
+
+- **Date Grouping**: Intelligently groups notifications into `Today`, `This week`, and `Earlier` sections.
+- **Filter Chips**: Top bar filters for `All`, `Unread` (with live count badge), and `Mentions` (comments & replies).
+- **Rich Notification Cards**:
+  - Distinct actor avatars with action badge icons (video, subscriber, comment, reply).
+  - Video thumbnail previews on the right when notifications reference videos.
+  - YouTube-style unread indicator dot and time-ago formatting.
+- **3-Dots Options Menu**: Bottom modal sheet with actions to delete/hide notifications, mark as read, visit creator channels, and jump to notification settings.
+- **Backend Optimization**: `Notification.find().populate('video', 'title thumbnailUrl duration')` and `deleteNotification(id)` endpoint integration with optimistic UI updates.
+
+### YouTube-Inspired Video Player & Playback Controls (`video-platform/src/app/watch.tsx`)
+
+- **Seek Controls & Visual Ripple**: Quick 10s forward (`+10s`) and rewind (`-10s`) controls with an animated semi-circular feedback overlay on top of the player.
+- **Playback Speed Selector**: Dedicated speed pill and bottom modal sheet supporting `0.25x`, `0.5x`, `0.75x`, `Normal (1.0x)`, `1.25x`, `1.5x`, `1.75x`, and `2.0x` speeds, synchronized with `player.playbackRate`.
+- **Audio & Mute Toggle**: Instant mute/unmute control pill linked to `player.muted`.
+- **Loop Video Toggle**: Quick repeat toggle setting `player.loop`.
+- **Data Saver & Settings Sync**: Applies resolution constraints (`maxResolution = { width: 640, height: 360 }`) when `settings.dataSaver` is active.
+- **React Compiler Purity**: Uses `useRef` synchronization inside an isolated effect to update hook properties without mutating hook return references in handler scopes.
+
+
 
 ## 12. Completion Report
 

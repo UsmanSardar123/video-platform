@@ -1,117 +1,81 @@
-
-const path = require('path');
-const dotenv = require('dotenv');
-
-dotenv.config({ path: path.resolve(__dirname, '.env') });
-
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
-const authRoutes = require('./routes/auth.routes');
-const userRoutes = require('./routes/user.routes');
-const videoRoutes = require('./routes/video.routes');
-const uploadRoutes = require('./routes/upload.routes');
-const externalVideoRoutes = require('./routes/externalVideo.routes');
-const searchRoutes = require('./routes/search.routes');
-const subscriptionRoutes = require('./routes/subscription.routes');
-const notificationRoutes = require('./routes/notification.routes');
-
-const { requestLogger } = require('./middleware/logger.middleware');
-const { errorHandler } = require('./middleware/error.middleware');
+const loggerMiddleware = require('./middleware/logger.middleware');
+const errorHandler = require('./middleware/error.middleware');
 const ApiError = require('./utils/apiError.util');
 const ApiResponse = require('./utils/apiResponse.util');
 
 const app = express();
 
+// Security HTTP headers
 app.use(helmet());
 
-const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:8081')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-
-const isLocalExpoWebOrigin = (origin) => {
-  if (process.env.NODE_ENV === 'production' || !origin) return false;
-  try {
-    const url = new URL(origin);
-    if (url.protocol !== 'http:' || !['8081', '19006'].includes(url.port)) return false;
-    if (['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return true;
-    const octets = url.hostname.split('.').map(Number);
-    if (octets.length !== 4 || octets.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) return false;
-    return octets[0] === 10 ||
-      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
-      (octets[0] === 192 && octets[1] === 168);
-  } catch {
-    return false;
-  }
-};
+// CORS configuration
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
+  : ['http://localhost:8081', 'http://localhost:3000'];
 
 app.use(
   cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin) || isLocalExpoWebOrigin(origin)) {
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g. mobile apps, curl, Postman, server-to-server)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-
-      return callback(new Error('Origin not allowed by CORS'));
+      return callback(new ApiError(403, `CORS policy: Origin ${origin} not allowed`));
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 
-app.set('trust proxy', 1);
-
-app.use(
-  '/api',
-  rateLimit({
+// Rate limiting for API routes (disabled in test environment)
+if (process.env.NODE_ENV !== 'test') {
+  const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: Number(process.env.RATE_LIMIT_MAX) || 1200,
-    standardHeaders: 'draft-7',
+    max: 100,
+    standardHeaders: true,
     legacyHeaders: false,
     message: {
+      statusCode: 429,
       success: false,
-      message: 'Too many requests. Please try again later.',
+      message: 'Too many requests from this IP, please try again after 15 minutes',
+      errors: [],
     },
-  })
-);
-
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
-
-app.use(requestLogger);
-
-app.get('/api/health', (_req, res) => {
-  res.status(200).json({
-    ...new ApiResponse(200, {
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || 'development',
-    }, 'API is healthy'),
   });
-});
+  app.use('/api', limiter);
+}
 
-// Authentication routes
-app.use('/api/auth', authRoutes);
+// Request body parsers
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// User profile routes
-app.use('/api/users', userRoutes);
-app.use('/api/videos', videoRoutes);
-app.use('/api/subscriptions', subscriptionRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/uploads', uploadRoutes);
-app.use('/api/external-videos', externalVideoRoutes);
-app.use('/api/search', searchRoutes);
+// Request logging middleware
+app.use(loggerMiddleware);
 
-// Handle unknown routes
-app.use((req, res, next) => {
-  next(
-    new ApiError(
-      404,
-      `Route not found: ${req.method} ${req.originalUrl}`
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development',
+      },
+      'API is healthy'
     )
   );
+});
+
+// Catch-all 404 handler for unknown routes
+app.use((req, res, next) => {
+  next(new ApiError(404, `Route not found: ${req.method} ${req.originalUrl}`));
 });
 
 // Centralized error handler

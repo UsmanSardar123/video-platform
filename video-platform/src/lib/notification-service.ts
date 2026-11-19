@@ -2,11 +2,18 @@ import { apiRequest, type ApiEnvelope } from './api';
 
 export type NotificationType = 'new_video' | 'new_comment' | 'new_subscriber' | 'comment_reply';
 
+export type NotificationVideoInfo = {
+  _id: string;
+  title?: string;
+  thumbnailUrl?: string;
+  duration?: number;
+};
+
 export type NotificationRecord = {
   _id: string;
   type: NotificationType;
   actor?: { _id: string; username?: string; fullName?: string; avatar?: string } | null;
-  video?: string | null;
+  video?: string | NotificationVideoInfo | null;
   comment?: string | null;
   message: string;
   link?: { screen?: string; params?: Record<string, string> };
@@ -53,3 +60,12 @@ export async function markNotificationRead(id: string): Promise<number> {
 export async function markAllNotificationsRead(): Promise<void> {
   await apiRequest('/api/notifications/read-all', { method: 'PATCH' });
 }
+
+export async function deleteNotification(id: string): Promise<number> {
+  const res = await apiRequest<{ unreadCount: number }>(
+    `/api/notifications/${encodeURIComponent(id)}`,
+    { method: 'DELETE' }
+  );
+  return res.data?.unreadCount ?? 0;
+}
+

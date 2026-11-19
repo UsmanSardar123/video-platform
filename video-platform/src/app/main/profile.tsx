@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useState } from 'react';
@@ -34,6 +35,7 @@ import {
   setVideoLike,
   setWatchLater,
   submitCreatorReview,
+  uploadAvatarImage,
 } from '@/lib/video-service';
 import {
   cleanTitle,
@@ -50,12 +52,14 @@ type LibraryTab = 'uploads' | 'watch-later' | 'liked';
 
 export default function ProfileScreen() {
   const { userId } = useLocalSearchParams<{ userId?: string }>();
-  const { user, loading: authLoading, logout, deleteAccount } = useAuth();
+  const { user, loading: authLoading, logout, deleteAccount, updateProfile } = useAuth();
   const { mode } = useThemeMode();
   const { showToast } = useToast();
   const { unreadCount } = useNotifications();
   const isDark = mode === 'dark';
   const C = isDark ? Design.color : Design.light;
+
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   // Viewing someone else's channel vs own studio (safe parameter normalization)
   const rawUserId = Array.isArray(userId) ? userId[0] : userId;
@@ -371,6 +375,31 @@ export default function ProfileScreen() {
   const handlePlayAll = (playlist: VideoRecord[]) => {
     if (playlist.length > 0) {
       router.push({ pathname: '/watch', params: { id: playlist[0]._id } });
+    }
+  };
+
+  const handlePickAvatar = async () => {
+    if (!user) return;
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+
+      if (result.canceled || !result.assets[0]?.uri) return;
+
+      const asset = result.assets[0];
+      setAvatarUploading(true);
+
+      const uploadedUrl = await uploadAvatarImage(asset);
+      await updateProfile({ avatar: uploadedUrl });
+      showToast('Profile picture updated!');
+    } catch (err: any) {
+      showToast(err?.message || 'Could not update profile picture', 'error');
+    } finally {
+      setAvatarUploading(false);
     }
   };
 
@@ -697,20 +726,46 @@ export default function ProfileScreen() {
               ]}
             >
               <View style={styles.accountHeaderTop}>
-                {user.avatar ? (
-                  <Image source={{ uri: user.avatar }} style={styles.accountAvatar} contentFit="cover" />
-                ) : (
-                  <View
-                    style={[
-                      styles.accountAvatarFallback,
-                      { backgroundColor: isDark ? Design.color.accentSurface : '#fee2e2' },
-                    ]}
-                  >
-                    <Text style={[styles.accountAvatarInitial, { color: Design.color.accent }]}>
-                      {(user.fullName || user.username).charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                )}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Change profile picture"
+                  disabled={avatarUploading}
+                  onPress={handlePickAvatar}
+                  style={styles.avatarButtonWrap}
+                >
+                  {user.avatar ? (
+                    <Image source={{ uri: user.avatar }} style={styles.accountAvatar} contentFit="cover" />
+                  ) : (
+                    <View
+                      style={[
+                        styles.accountAvatarFallback,
+                        { backgroundColor: isDark ? Design.color.accentSurface : '#fee2e2' },
+                      ]}
+                    >
+                      <Text style={[styles.accountAvatarInitial, { color: Design.color.accent }]}>
+                        {(user.fullName || user.username).charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  {avatarUploading ? (
+                    <View style={styles.avatarLoadingOverlay}>
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    </View>
+                  ) : (
+                    <View
+                      style={[
+                        styles.avatarCameraBadge,
+                        { backgroundColor: Design.color.accent, borderColor: C.background },
+                      ]}
+                    >
+                      <SymbolView
+                        name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
+                        size={12}
+                        tintColor="#ffffff"
+                      />
+                    </View>
+                  )}
+                </Pressable>
 
                 <View style={styles.accountInfo}>
                   <Text style={[styles.accountName, { color: C.text }]} numberOfLines={1}>
@@ -2493,6 +2548,34 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
+  },
+  avatarButtonWrap: {
+    position: 'relative',
+    width: 64,
+    height: 64,
+  },
+  avatarCameraBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  avatarLoadingOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   accountAvatarFallback: {
     width: 64,

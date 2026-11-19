@@ -70,6 +70,8 @@ function getEmbedUrl(url: string, sourceType: string): string | null {
   return null;
 }
 
+const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0] as const;
+
 export default function WatchScreen() {
   const { id, commentId } = useLocalSearchParams<{ id?: string; commentId?: string }>();
   const { user } = useAuth();
@@ -108,11 +110,21 @@ export default function WatchScreen() {
   const [postingComment, setPostingComment] = useState(false);
   const [showCommentsModal, setShowCommentsModal] = useState(false);
 
+  // YouTube-inspired playback controls state
   const { settings } = useSettings();
+  const [playbackRate, setPlaybackRate] = useState(1.0);
+  const [showSpeedModal, setShowSpeedModal] = useState(false);
+  const [isMuted, setIsMuted] = useState(settings.startMuted);
+  const [isLooping, setIsLooping] = useState(false);
+  const [seekFeedback, setSeekFeedback] = useState<{ direction: 'left' | 'right'; count: number } | null>(null);
+  const seekFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const player = useVideoPlayer(null, (instance) => {
     instance.loop = false;
     instance.muted = settings.startMuted;
+    if (settings.dataSaver) {
+      instance.maxResolution = { width: 640, height: 360 };
+    }
   });
   const playback = useEvent(player, 'statusChange', { status: player.status });
 
@@ -128,6 +140,61 @@ export default function WatchScreen() {
     });
     return () => sub.remove();
   }, [player, related, settings.autoplay, showToast]);
+
+  // Cleanup seek feedback timer on unmount
+  useEffect(() => {
+    return () => {
+      if (seekFeedbackTimerRef.current) clearTimeout(seekFeedbackTimerRef.current);
+    };
+  }, []);
+
+  const playerRef = useRef(player);
+  useEffect(() => {
+    playerRef.current = player;
+  }, [player]);
+
+  // Synchronize playback properties with player instance in an effect
+  useEffect(() => {
+    try {
+      const p = playerRef.current;
+      p.playbackRate = playbackRate;
+      p.muted = isMuted;
+      p.loop = isLooping;
+    } catch {
+      // Non-blocking
+    }
+  }, [playbackRate, isMuted, isLooping]);
+
+  const handleSelectSpeed = (speed: number) => {
+    setPlaybackRate(speed);
+    setShowSpeedModal(false);
+    showToast(`Playback speed: ${speed === 1.0 ? 'Normal' : `${speed}x`}`);
+  };
+
+  const handleToggleMute = () => {
+    setIsMuted((prev) => {
+      const next = !prev;
+      showToast(next ? 'Muted' : 'Unmuted');
+      return next;
+    });
+  };
+
+  const handleToggleLoop = () => {
+    setIsLooping((prev) => {
+      const next = !prev;
+      showToast(next ? 'Loop video on' : 'Loop video off');
+      return next;
+    });
+  };
+
+  const handleSeek = (seconds: number) => {
+    player.seekBy(seconds);
+    setSeekFeedback({ direction: seconds > 0 ? 'right' : 'left', count: Math.abs(seconds) });
+    if (seekFeedbackTimerRef.current) clearTimeout(seekFeedbackTimerRef.current);
+    seekFeedbackTimerRef.current = setTimeout(() => {
+      setSeekFeedback(null);
+    }, 850);
+  };
 
   const viewRecordedRef = useRef<string | null>(null);
 
@@ -462,13 +529,39 @@ export default function WatchScreen() {
             {/* 16:9 Video Player */}
             <View style={styles.playerContainer}>
               {video.sourceType === 'cloudinary' ? (
-                <VideoView
-                  player={player}
-                  style={StyleSheet.absoluteFill}
-                  nativeControls
-                  contentFit="contain"
-                  fullscreenOptions={{ enable: true }}
-                />
+                <>
+                  <VideoView
+                    player={player}
+                    style={StyleSheet.absoluteFill}
+                    nativeControls
+                    contentFit="contain"
+                    fullscreenOptions={{ enable: true }}
+                  />
+                  {seekFeedback ? (
+                    <View
+                      style={[
+                        styles.seekFeedbackOverlay,
+                        seekFeedback.direction === 'left'
+                          ? styles.seekFeedbackLeft
+                          : styles.seekFeedbackRight,
+                      ]}
+                      pointerEvents="none"
+                    >
+                      <SymbolView
+                        name={
+                          seekFeedback.direction === 'left'
+                            ? ({ ios: 'gobackward.10', android: 'replay_10', web: 'replay_10' } as any)
+                            : ({ ios: 'goforward.10', android: 'forward_10', web: 'forward_10' } as any)
+                        }
+                        size={32}
+                        tintColor="#ffffff"
+                      />
+                      <Text style={styles.seekFeedbackText}>
+                        {seekFeedback.direction === 'left' ? '-10s' : '+10s'}
+                      </Text>
+                    </View>
+                  ) : null}
+                </>
               ) : Platform.OS === 'web' && embedUrl ? (
                 <iframe
                   src={embedUrl}
@@ -739,6 +832,151 @@ export default function WatchScreen() {
                   ]}
                 >
                   {interaction.watchLater ? 'Saved' : 'Save'}
+                </Text>
+              </Pressable>
+
+              {/* Seek -10s Pill */}
+              <Pressable
+                style={[
+                  styles.actionPillButton,
+                  { backgroundColor: C.surfaceRaised, borderColor: C.border, borderWidth: StyleSheet.hairlineWidth },
+                  !isDark && Design.shadow.sm,
+                ]}
+                onPress={() => handleSeek(-10)}
+                accessibilityRole="button"
+                accessibilityLabel="Seek backward 10 seconds"
+              >
+                <SymbolView
+                  name={{
+                    ios: 'gobackward.10',
+                    android: 'replay_10',
+                    web: 'replay_10',
+                  } as any}
+                  size={18}
+                  tintColor={C.text}
+                />
+                <Text style={[styles.actionPillText, { color: C.text }]}>-10s</Text>
+              </Pressable>
+
+              {/* Seek +10s Pill */}
+              <Pressable
+                style={[
+                  styles.actionPillButton,
+                  { backgroundColor: C.surfaceRaised, borderColor: C.border, borderWidth: StyleSheet.hairlineWidth },
+                  !isDark && Design.shadow.sm,
+                ]}
+                onPress={() => handleSeek(10)}
+                accessibilityRole="button"
+                accessibilityLabel="Seek forward 10 seconds"
+              >
+                <SymbolView
+                  name={{
+                    ios: 'goforward.10',
+                    android: 'forward_10',
+                    web: 'forward_10',
+                  } as any}
+                  size={18}
+                  tintColor={C.text}
+                />
+                <Text style={[styles.actionPillText, { color: C.text }]}>+10s</Text>
+              </Pressable>
+
+              {/* Playback Speed Pill */}
+              <Pressable
+                style={[
+                  styles.actionPillButton,
+                  { backgroundColor: C.surfaceRaised, borderColor: C.border, borderWidth: StyleSheet.hairlineWidth },
+                  playbackRate !== 1.0 && {
+                    backgroundColor: isDark ? Design.color.accentSurface : '#fee2e2',
+                  },
+                  !isDark && Design.shadow.sm,
+                ]}
+                onPress={() => setShowSpeedModal(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`Playback speed, currently ${playbackRate === 1.0 ? 'Normal' : `${playbackRate}x`}`}
+              >
+                <SymbolView
+                  name={{
+                    ios: 'gauge.with.dots.needle.bottom.50percent',
+                    android: 'speed',
+                    web: 'speed',
+                  } as any}
+                  size={18}
+                  tintColor={playbackRate !== 1.0 ? Design.color.accent : C.text}
+                />
+                <Text
+                  style={[
+                    styles.actionPillText,
+                    { color: playbackRate !== 1.0 ? Design.color.accent : C.text },
+                  ]}
+                >
+                  {playbackRate === 1.0 ? 'Speed' : `${playbackRate}x`}
+                </Text>
+              </Pressable>
+
+              {/* Audio / Mute Pill */}
+              <Pressable
+                style={[
+                  styles.actionPillButton,
+                  { backgroundColor: C.surfaceRaised, borderColor: C.border, borderWidth: StyleSheet.hairlineWidth },
+                  isMuted && {
+                    backgroundColor: isDark ? Design.color.accentSurface : '#fee2e2',
+                  },
+                  !isDark && Design.shadow.sm,
+                ]}
+                onPress={handleToggleMute}
+                accessibilityRole="button"
+                accessibilityLabel={isMuted ? 'Unmute video' : 'Mute video'}
+              >
+                <SymbolView
+                  name={{
+                    ios: isMuted ? 'speaker.slash.fill' : 'speaker.wave.2.fill',
+                    android: isMuted ? 'volume_off' : 'volume_up',
+                    web: isMuted ? 'volume_off' : 'volume_up',
+                  } as any}
+                  size={18}
+                  tintColor={isMuted ? Design.color.accent : C.text}
+                />
+                <Text
+                  style={[
+                    styles.actionPillText,
+                    { color: isMuted ? Design.color.accent : C.text },
+                  ]}
+                >
+                  {isMuted ? 'Muted' : 'Audio'}
+                </Text>
+              </Pressable>
+
+              {/* Loop / Repeat Pill */}
+              <Pressable
+                style={[
+                  styles.actionPillButton,
+                  { backgroundColor: C.surfaceRaised, borderColor: C.border, borderWidth: StyleSheet.hairlineWidth },
+                  isLooping && {
+                    backgroundColor: isDark ? Design.color.accentSurface : '#fee2e2',
+                  },
+                  !isDark && Design.shadow.sm,
+                ]}
+                onPress={handleToggleLoop}
+                accessibilityRole="button"
+                accessibilityLabel={isLooping ? 'Turn loop off' : 'Turn loop on'}
+              >
+                <SymbolView
+                  name={{
+                    ios: 'repeat',
+                    android: 'repeat',
+                    web: 'repeat',
+                  } as any}
+                  size={18}
+                  tintColor={isLooping ? Design.color.accent : C.text}
+                />
+                <Text
+                  style={[
+                    styles.actionPillText,
+                    { color: isLooping ? Design.color.accent : C.text },
+                  ]}
+                >
+                  {isLooping ? 'Looping' : 'Loop'}
                 </Text>
               </Pressable>
             </ScrollView>
@@ -1049,6 +1287,85 @@ export default function WatchScreen() {
             </ScrollView>
           </View>
         </SafeAreaView>
+      </Modal>
+
+      {/* YouTube-style Playback Speed Selection Modal */}
+      <Modal
+        visible={showSpeedModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSpeedModal(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setShowSpeedModal(false)}
+        >
+          <View
+            style={[
+              styles.speedModalSheet,
+              {
+                backgroundColor: C.surface,
+                borderTopColor: C.border,
+              },
+            ]}
+          >
+            <View style={styles.modalHandleWrap}>
+              <View style={[styles.modalHandle, { backgroundColor: C.border }]} />
+            </View>
+
+            <View style={styles.speedModalHeader}>
+              <Text style={[styles.speedModalTitle, { color: C.text }]}>Playback speed</Text>
+            </View>
+
+            <ScrollView style={styles.speedList}>
+              {SPEED_OPTIONS.map((speed) => {
+                const isSelected = playbackRate === speed;
+                const label = speed === 1.0 ? 'Normal' : `${speed}x`;
+                return (
+                  <Pressable
+                    key={speed}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Set playback speed to ${label}`}
+                    style={[
+                      styles.speedOptionRow,
+                      { borderBottomColor: C.border },
+                      isSelected && { backgroundColor: isDark ? '#ffffff12' : '#00000008' },
+                    ]}
+                    onPress={() => handleSelectSpeed(speed)}
+                  >
+                    <Text
+                      style={[
+                        styles.speedOptionText,
+                        {
+                          color: isSelected ? Design.color.accent : C.text,
+                          fontWeight: isSelected ? '700' : '500',
+                        },
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                    {isSelected ? (
+                      <SymbolView
+                        name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                        size={18}
+                        tintColor={Design.color.accent}
+                      />
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel speed selection"
+              style={[styles.speedCancelBtn, { backgroundColor: C.surfaceRaised, borderColor: C.border }]}
+              onPress={() => setShowSpeedModal(false)}
+            >
+              <Text style={[styles.speedCancelText, { color: C.text }]}>Cancel</Text>
+            </Pressable>
+          </View>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
@@ -1522,5 +1839,89 @@ const styles = StyleSheet.create({
   },
   closeBtn: {
     padding: 4,
+  },
+  seekFeedbackOverlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: '40%',
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    zIndex: 99,
+  },
+  seekFeedbackLeft: {
+    left: 0,
+    borderTopRightRadius: 80,
+    borderBottomRightRadius: 80,
+  },
+  seekFeedbackRight: {
+    right: 0,
+    borderTopLeftRadius: 80,
+    borderBottomLeftRadius: 80,
+  },
+  seekFeedbackText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  speedModalSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingBottom: 28,
+    maxHeight: '60%',
+  },
+  modalHandleWrap: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  modalHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+  },
+  speedModalHeader: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(128,128,128,0.2)',
+  },
+  speedModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  speedList: {
+    paddingHorizontal: 12,
+  },
+  speedOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: Design.radius.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  speedOptionText: {
+    fontSize: 14.5,
+  },
+  speedCancelBtn: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: Design.radius.pill,
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  speedCancelText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

@@ -27,7 +27,8 @@ import { useThemeMode } from '@/contexts/theme-context';
 import { useToast } from '@/contexts/toast-context';
 import { useSettings } from '@/contexts/settings-context';
 import { Design } from '@/constants/design';
-import { apiRequest, type SessionUser } from '@/lib/api';
+import { type SessionUser } from '@/lib/api';
+import { uploadAvatarImage } from '@/lib/video-service';
 
 export default function EditProfileScreen() {
   const { user, loading } = useAuth();
@@ -136,53 +137,11 @@ function ProfileForm({ user }: { user: SessionUser }) {
       const asset = result.assets[0];
       setAvatarUploading(true);
 
-      // Attempt Cloudinary authorization
-      try {
-        const authRes = await apiRequest<{
-          apiKey: string;
-          timestamp: number;
-          publicId: string;
-          uploadUrl: string;
-          signature: string;
-          allowedFormats: string[];
-        }>('/api/upload/avatar-signature', { method: 'POST', body: JSON.stringify({}) });
-
-        const auth = authRes.data;
-        const formData = new FormData();
-        formData.append('api_key', auth.apiKey);
-        formData.append('timestamp', String(auth.timestamp));
-        formData.append('public_id', auth.publicId);
-        formData.append('overwrite', 'false');
-        formData.append('allowed_formats', auth.allowedFormats.join(','));
-        formData.append('signature', auth.signature);
-
-        if (Platform.OS === 'web' && (asset as any).file) {
-          formData.append('file', (asset as any).file, asset.fileName || 'avatar.jpg');
-        } else {
-          formData.append('file', {
-            uri: asset.uri,
-            name: asset.fileName || 'avatar.jpg',
-            type: asset.mimeType || 'image/jpeg',
-          } as never);
-        }
-
-        const uploadRes = await fetch(auth.uploadUrl, { method: 'POST', body: formData });
-        const uploadData = await uploadRes.json();
-
-        if (uploadRes.ok && uploadData.secure_url) {
-          setAvatar(uploadData.secure_url);
-          await updateProfile({ avatar: uploadData.secure_url });
-          setInitialValues((prev) => ({ ...prev, avatar: uploadData.secure_url }));
-          showToast('Profile photo updated.');
-          return;
-        }
-      } catch {
-        // Fallback for offline/mock environments
-        setAvatar(asset.uri);
-        await updateProfile({ avatar: asset.uri });
-        setInitialValues((prev) => ({ ...prev, avatar: asset.uri }));
-        showToast('Profile photo updated.');
-      }
+      const uploadedUrl = await uploadAvatarImage(asset);
+      setAvatar(uploadedUrl);
+      await updateProfile({ avatar: uploadedUrl });
+      setInitialValues((prev) => ({ ...prev, avatar: uploadedUrl }));
+      showToast('Profile photo updated.');
     } catch (err: any) {
       showToast(err?.message || 'Could not update avatar', 'error');
     } finally {
@@ -325,7 +284,13 @@ function ProfileForm({ user }: { user: SessionUser }) {
 
           {/* Avatar / Picture Card */}
           <View style={[styles.avatarCard, { backgroundColor: C.surface, borderColor: C.border }, !isDark && Design.shadow.sm]}>
-            <View style={styles.avatarWrap}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Upload profile photo"
+              disabled={avatarUploading}
+              onPress={handlePickAvatar}
+              style={styles.avatarWrap}
+            >
               {avatar ? (
                 <Image source={{ uri: avatar }} style={styles.avatar} contentFit="cover" />
               ) : (
@@ -344,8 +309,21 @@ function ProfileForm({ user }: { user: SessionUser }) {
                 <View style={styles.avatarLoadingOverlay}>
                   <ActivityIndicator color="#ffffff" size="small" />
                 </View>
-              ) : null}
-            </View>
+              ) : (
+                <View
+                  style={[
+                    styles.avatarCameraBadge,
+                    { backgroundColor: Design.color.accent, borderColor: C.background },
+                  ]}
+                >
+                  <SymbolView
+                    name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
+                    size={14}
+                    tintColor="#ffffff"
+                  />
+                </View>
+              )}
+            </Pressable>
 
             <View style={styles.avatarActions}>
               <Text style={[styles.avatarHeading, { color: C.text }]}>Profile Picture</Text>
@@ -628,16 +606,17 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    overflow: 'hidden',
     position: 'relative',
   },
   avatar: {
     width: 68,
     height: 68,
+    borderRadius: 34,
   },
   avatarFallback: {
     width: 68,
     height: 68,
+    borderRadius: 34,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -645,9 +624,26 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '800',
   },
+  avatarCameraBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+  },
   avatarLoadingOverlay: {
     ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 34,
     justifyContent: 'center',
     alignItems: 'center',
   },

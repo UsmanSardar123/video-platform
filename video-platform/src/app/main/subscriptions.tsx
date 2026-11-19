@@ -54,9 +54,11 @@ export default function SubscriptionsScreen() {
   const [showManageModal, setShowManageModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [notificationPrefs, setNotificationPrefs] = useState<Record<string, NotificationBellMode>>({});
+  const [currentTimestamp, setCurrentTimestamp] = useState(() => Date.now());
 
   useFocusEffect(
     useCallback(() => {
+      setCurrentTimestamp(Date.now());
       void refreshFeed();
       fetchHistory()
         .then((items) => {
@@ -67,6 +69,7 @@ export default function SubscriptionsScreen() {
   );
 
   const onRefresh = async () => {
+    setCurrentTimestamp(Date.now());
     await refreshFeed();
   };
 
@@ -78,7 +81,7 @@ export default function SubscriptionsScreen() {
         if (cId !== selectedCreatorId) return false;
       }
       if (activeFilter === 'today') {
-        const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+        const oneDayAgo = currentTimestamp - 24 * 60 * 60 * 1000;
         return new Date(v.createdAt).getTime() >= oneDayAgo;
       }
       if (activeFilter === 'unwatched') {
@@ -86,7 +89,7 @@ export default function SubscriptionsScreen() {
       }
       return true;
     });
-  }, [feed, selectedCreatorId, activeFilter, historyIds]);
+  }, [feed, selectedCreatorId, activeFilter, historyIds, currentTimestamp]);
 
   // Subscribed creators filtered by search query in the manage modal
   const searchedCreators = useMemo(() => {
@@ -560,7 +563,7 @@ export default function SubscriptionsScreen() {
               ListEmptyComponent={
                 <View style={styles.manageEmpty}>
                   <Text style={[styles.manageEmptyText, { color: C.muted }]}>
-                    No subscribed channels matching "{searchQuery}".
+                    {`No subscribed channels matching "${searchQuery}".`}
                   </Text>
                 </View>
               }

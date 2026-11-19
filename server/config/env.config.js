@@ -1,49 +1,31 @@
-
 const path = require('path');
 const dotenv = require('dotenv');
 
+// Ensure environment variables are loaded from server/.env
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const validateEnv = () => {
-  const required = ['MONGODB_URI'];
+  const critical = ['PORT', 'MONGODB_URI'];
+  const missingCritical = critical.filter((key) => !process.env[key]);
 
-  if (process.env.NODE_ENV !== 'test') {
-    required.push('JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET');
+  if (missingCritical.length > 0) {
+    console.warn(`[WARNING] Critical environment variable(s) not set: ${missingCritical.join(', ')}`);
   }
 
-  const missing = required.filter((key) => !process.env[key]);
+  const optional = [
+    'JWT_ACCESS_SECRET',
+    'JWT_REFRESH_SECRET',
+    'CLOUDINARY_CLOUD_NAME',
+    'CLOUDINARY_API_KEY',
+    'CLOUDINARY_API_SECRET',
+  ];
+  const missingOptional = optional.filter((key) => !process.env[key]);
 
-  if (missing.length > 0) {
-    throw new Error(
-      `Missing required environment variables: ${missing.join(', ')}`
-    );
-  }
-
-  if (process.env.NODE_ENV !== 'test') {
-    const secrets = [
-      'JWT_ACCESS_SECRET',
-      'JWT_REFRESH_SECRET',
-    ];
-
-    for (const key of secrets) {
-      if (
-        process.env[key] &&
-        process.env[key].length < 32
-      ) {
-        throw new Error(`${key} must be at least 32 characters long`);
-      }
-    }
-
-    const cloudinaryKeys = ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
-    const invalidCloudinary = cloudinaryKeys.filter(
-      (k) => !process.env[k] || process.env[k].startsWith('your_') || process.env[k].trim() === ''
-    );
-    if (invalidCloudinary.length > 0) {
-      console.warn(
-        `[WARNING] Cloudinary credentials not fully configured in server/.env: ${invalidCloudinary.join(', ')}. Local device video uploads will return an explicit 503 error identifying these variables until real credentials are provided.`
-      );
-    }
+  if (missingOptional.length > 0 && process.env.NODE_ENV !== 'test') {
+    console.warn(`[INFO] Optional environment variable(s) not set: ${missingOptional.join(', ')}`);
   }
 };
 
-module.exports = { validateEnv };
+module.exports = {
+  validateEnv,
+};

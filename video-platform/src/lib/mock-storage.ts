@@ -783,6 +783,25 @@ export async function handleMockRequest<T>(
     };
   }
 
+  // 5b. Avatar upload signature
+  if (
+    (pathname === '/api/uploads/avatar-signature' || pathname === '/api/upload/avatar-signature') &&
+    method === 'POST'
+  ) {
+    if (!currentUser) throw new Error('Authentication required.');
+    return {
+      success: true,
+      data: {
+        apiKey: 'mock_key',
+        timestamp: Date.now(),
+        publicId: `mock_${currentUser.id}_avatar_${Date.now()}`,
+        uploadUrl: 'mock',
+        signature: 'mock_signature',
+        allowedFormats: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+      } as unknown as T,
+    };
+  }
+
   // 6. Upload complete (local file upload)
   if (pathname === '/api/uploads/complete' && method === 'POST') {
     if (!currentUser) throw new Error('Authentication required.');
