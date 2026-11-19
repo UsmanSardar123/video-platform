@@ -2,3 +2,6 @@
 # Gradle cache
 .gradle-user-home/
 **/.gradle-user-home/
+
+/video-platform/.gradle-user-home/
+**/.gradle-user-home/
