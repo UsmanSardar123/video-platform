@@ -1,0 +1,4 @@
+
+# Gradle cache
+.gradle-user-home/
+**/.gradle-user-home/
