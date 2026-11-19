@@ -67,6 +67,7 @@ jest.mock('../../middleware/auth.middleware', () => ({
     }
     next();
   },
+  requireAdmin: (req, res, next) => req.user?.role === 'admin' ? next() : res.status(403).json({ success: false }),
 }));
 
 const Notification = require('../../models/notification.model');

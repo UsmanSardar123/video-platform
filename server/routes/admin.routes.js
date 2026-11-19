@@ -349,7 +349,7 @@ router.patch('/videos/:id/approve', authenticate, requireAdmin, async (req, res,
 
     res.status(200).json({
       success: true,
-      message: 'Video approved and restored to public catalog',
+      message: 'Video approved successfully and restored to public catalog',
       data: { ...populated, id: populated._id.toString() },
     });
   } catch (error) {

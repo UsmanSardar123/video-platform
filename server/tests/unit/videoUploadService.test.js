@@ -1,6 +1,9 @@
 jest.mock('../../services/cloudinary.service', () => ({
   verifyUploadedAsset: jest.fn(),
 }));
+jest.mock('../../services/notificationEvents.service', () => ({
+  notifyNewVideo: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('../../models/video.model', () => ({
   findOne: jest.fn(),
   create: jest.fn(),

@@ -25,6 +25,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "./plugins/with-windows-native-paths",
       "expo-router",
       [
         "expo-splash-screen",

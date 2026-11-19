@@ -75,19 +75,6 @@ export class ApiRequestError extends Error {
   constructor(message: string, readonly statusCode: number) { super(message); this.name = 'ApiRequestError'; }
 }
 
-function isNetworkError(error: unknown): boolean {
-  if (mockModeActive) return true;
-  if (!error) return false;
-  const msg = error instanceof Error ? error.message : String(error);
-  return (
-    msg.includes('Cannot reach the API') ||
-    msg.includes('Failed to fetch') ||
-    msg.includes('Network request failed') ||
-    msg.includes('NetworkError') ||
-    msg.includes('ECONNREFUSED')
-  );
-}
-
 async function fetchFromApi(path: string, init?: RequestInit) {
   try {
     return await fetch(`${API_URL}${path}`, init);
@@ -139,27 +126,13 @@ async function authRequest(path: string, input: object) {
     return mockResult.data.user;
   }
 
-  try {
-    const response = await fetchFromApi(path, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.message || 'Authentication failed');
-    await persistSession(result.data);
-    return result.data.user as SessionUser;
-  } catch (error) {
-    if (isNetworkError(error)) {
-      mockModeActive = true;
-      const mockResult = await handleMockRequest<{ accessToken: string; refreshToken: string; user: SessionUser }>(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      });
-      await persistSession(mockResult.data);
-      return mockResult.data.user;
-    }
-    throw error;
-  }
+  const response = await fetchFromApi(path, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Authentication failed');
+  await persistSession(result.data);
+  return result.data.user as SessionUser;
 }
 
 export const signIn = (email: string, password: string) =>
@@ -224,36 +197,29 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
   if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
 
-  try {
-    let response = await fetchFromApi(path, { ...init, headers });
-    if (response.status === 401 && accessToken) {
-      if (await refreshSession()) {
-        ({ accessToken } = await readStoredSession());
-        headers.set('Authorization', `Bearer ${accessToken}`);
-        response = await fetchFromApi(path, { ...init, headers });
-        if (response.status === 401) {
-          await clearStoredSession();
-          throw new Error('Your session expired. Please sign in again.');
-        }
-      } else {
-        notifySessionExpired();
+  let response = await fetchFromApi(path, { ...init, headers });
+  if (response.status === 401 && accessToken) {
+    if (await refreshSession()) {
+      ({ accessToken } = await readStoredSession());
+      headers.set('Authorization', `Bearer ${accessToken}`);
+      response = await fetchFromApi(path, { ...init, headers });
+      if (response.status === 401) {
+        await clearStoredSession();
         throw new Error('Your session expired. Please sign in again.');
       }
+    } else {
+      notifySessionExpired();
+      throw new Error('Your session expired. Please sign in again.');
     }
-    let result: ApiEnvelope<T> & { errors?: { message: string }[] };
-    try { result = await response.json(); } catch { throw new Error('The server returned an invalid response.'); }
-    if (!response.ok) {
-      const details = result.errors?.length ? ` ${result.errors.map((item) => item.message).join(', ')}` : '';
-      throw new ApiRequestError(`${result.message || 'Request failed'}${details}`, response.status);
-    }
-    return result;
-  } catch (cause) {
-    if (isNetworkError(cause)) {
-      mockModeActive = true;
-      return handleMockRequest<T>(path, init, user);
-    }
-    throw cause;
   }
+
+  let result: ApiEnvelope<T> & { errors?: { message: string }[] };
+  try { result = await response.json(); } catch { throw new Error('The server returned an invalid response.'); }
+  if (!response.ok) {
+    const details = result.errors?.length ? ` ${result.errors.map((item) => item.message).join(', ')}` : '';
+    throw new ApiRequestError(`${result.message || 'Request failed'}${details}`, response.status);
+  }
+  return result;
 }
 
 export async function updateStoredUser(user: SessionUser) {

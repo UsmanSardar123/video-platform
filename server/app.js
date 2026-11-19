@@ -7,6 +7,15 @@ const loggerMiddleware = require('./middleware/logger.middleware');
 const errorHandler = require('./middleware/error.middleware');
 const ApiError = require('./utils/apiError.util');
 const ApiResponse = require('./utils/apiResponse.util');
+const authRoutes = require('./routes/auth.routes');
+const userRoutes = require('./routes/user.routes');
+const videoRoutes = require('./routes/video.routes');
+const subscriptionRoutes = require('./routes/subscription.routes');
+const uploadRoutes = require('./routes/upload.routes');
+const externalVideoRoutes = require('./routes/externalVideo.routes');
+const searchRoutes = require('./routes/search.routes');
+const notificationRoutes = require('./routes/notification.routes');
+const adminRoutes = require('./routes/admin.routes');
 
 const app = express();
 
@@ -72,6 +81,17 @@ app.get('/api/health', (req, res) => {
     )
   );
 });
+
+// Public video catalog used by the Home feed.
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/videos', videoRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/uploads', uploadRoutes);
+app.use('/api/external-videos', externalVideoRoutes);
+app.use('/api/search', searchRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Catch-all 404 handler for unknown routes
 app.use((req, res, next) => {

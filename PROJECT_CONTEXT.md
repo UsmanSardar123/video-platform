@@ -156,6 +156,8 @@ After a significant feature or architecture change:
   - Frontend TypeScript: `npx tsc --noEmit` passes with 0 errors.
   - Frontend Lint: `npm run lint` passes with 0 warnings/errors.
   - Android Bundle: `npx expo export --platform android` bundles 1663 modules to Hermes bytecode (`.hbc`) cleanly.
+  - Windows Android native build: `npx expo run:android` succeeds from the project workspace and installs on the Pixel 7a emulator. The local config plugin registered in `video-platform/app.json` generates Android Gradle properties selecting installed CMake 3.31.6 (Ninja 1.12.1) and capping CMake object paths at 240 to avoid Windows MAX_PATH failures. Do not change Expo, React Native, Reanimated, or Worklets versions to address this path issue.
+  - Expo Doctor currently reports 19/20 checks; its remaining check identifies 17 SDK package patch/minor versions behind its latest recommendations. These did not prevent the verified Android build and were not changed as part of the CMake fix.
 
 ### YouTube-Inspired Library ("You") Hub (`video-platform/src/app/main/profile.tsx`)
 
@@ -224,3 +226,16 @@ Do not claim the task is complete if required functionality is still broken or u
 Correctness, security, data integrity, and preservation of working features take priority over speed.
 
 Prefer the smallest verified solution over a large rewrite. Work independently, recover intelligently from errors, and stop when the requested scope is complete.
+
+### Public video feed API
+
+- `GET /api/videos` is mounted in `server/app.js` and serves persisted videos with `visibility: public` and `moderationStatus: approved` from MongoDB. It accepts `page` (default 1), `limit` (default 20, maximum 50), and optional `category` / `creator` filters.
+- Responses use `{ success, data, pagination }`; an empty database result is a successful empty array. The Expo Home screen already renders its empty-feed state.
+- The Android emulator API fallback in `video-platform/src/lib/api.ts` is `http://10.0.2.2:5000`; `EXPO_PUBLIC_API_URL` may override it.
+- Endpoint-specific Supertest tests cover the Home request and empty list. The verified live response returned one persisted video for page 1 and no records for page 2; a fresh server startup was not independently verified because MongoDB SRV DNS lookup timed out in the current shell.
+
+### Explore search API
+
+- `GET /api/search` is mounted once in `server/app.js` and is public for browsing. An omitted or blank `q` returns the public catalog; `q` searches video title, description, and creator username/full name. Optional `creator`, `category`, and `sourceType` filters match the Explore screen.
+- Search only returns persisted public, approved records and uses escaped case-insensitive regexes; tags are not part of the current video model. Pagination defaults to page 1 and limit 20, with a maximum limit of 50. Invalid pagination returns HTTP 400, and a disconnected MongoDB connection returns HTTP 503.
+- Automated endpoint and query tests cover initial/empty searches, title/description/creator matches, special characters, pagination, invalid values, and database disconnection. Live requests to the backend on port 5000 returned the expected real record and empty/paginated outcomes. Android screen interaction remains unverified because `adb` cannot create its `.android` directory in this environment (`Permission denied`).

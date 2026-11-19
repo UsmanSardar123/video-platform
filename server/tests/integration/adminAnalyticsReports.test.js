@@ -1,5 +1,5 @@
 const request = require('supertest');
-const mongoose = require('mongoose');
+const mockMongoose = require('mongoose');
 
 // Mock models and services before requiring app
 jest.mock('../../models/video.model');
@@ -25,7 +25,7 @@ jest.mock('../../middleware/auth.middleware', () => {
       }
       if (auth === 'Bearer user-token') {
         req.user = {
-          _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+          _id: new mockMongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
           role: 'user',
           username: 'regular_user',
         };
@@ -33,7 +33,7 @@ jest.mock('../../middleware/auth.middleware', () => {
       }
       if (auth === 'Bearer admin-token') {
         req.user = {
-          _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439012'),
+          _id: new mockMongoose.Types.ObjectId('507f1f77bcf86cd799439012'),
           role: 'admin',
           username: 'admin_user',
         };
@@ -161,9 +161,9 @@ describe('Admin Analytics and Reporting API', () => {
   describe('Reports API Operations', () => {
     it('creates a new report via POST /api/admin/reports', async () => {
       const mockCreated = {
-        _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439044'),
+        _id: new mockMongoose.Types.ObjectId('507f1f77bcf86cd799439044'),
         targetType: 'video',
-        targetId: new mongoose.Types.ObjectId('507f1f77bcf86cd799439022'),
+        targetId: new mockMongoose.Types.ObjectId('507f1f77bcf86cd799439022'),
         reason: 'inappropriate_content',
         status: 'pending',
         createdAt: new Date(),
@@ -200,7 +200,7 @@ describe('Admin Analytics and Reporting API', () => {
 
     it('updates report status and resolution notes via PATCH /api/admin/reports/:id', async () => {
       const mockReportDoc = {
-        _id: new mongoose.Types.ObjectId('507f1f77bcf86cd799439044'),
+        _id: new mockMongoose.Types.ObjectId('507f1f77bcf86cd799439044'),
         status: 'pending',
         resolutionNotes: '',
         save: jest.fn().mockResolvedValue(true),
