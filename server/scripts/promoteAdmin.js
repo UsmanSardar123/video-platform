@@ -20,7 +20,7 @@ async function main() {
 
   user.role = 'admin';
   await user.save();
-  console.log(Successfully updated user @ () to role: 'admin');
+  console.log(`Successfully updated user @${user.username} to role: admin`);
   await mongoose.disconnect();
 }
 

@@ -2,6 +2,12 @@ const mongoose = require('mongoose');
 const User = require('../models/user.model');
 const Video = require('../models/video.model');
 const RefreshToken = require('../models/refreshToken.model');
+const VideoInteraction = require('../models/videoInteraction.model');
+const Comment = require('../models/comment.model');
+const Subscription = require('../models/subscription.model');
+const Notification = require('../models/notification.model');
+const Review = require('../models/review.model');
+const Report = require('../models/report.model');
 const { deleteVideoAssets } = require('./cloudinary.service');
 const ApiError = require('../utils/apiError.util');
 
@@ -10,14 +16,38 @@ const deleteAccount = async (userId, password) => {
   if (!user) throw new ApiError(404, 'User not found');
   if (!(await user.comparePassword(password))) throw new ApiError(401, 'Current password is incorrect');
 
-  const videos = await Video.find({ creator: userId }).select('cloudinaryPublicId').lean();
+  const videos = await Video.find({ creator: userId }).select('_id cloudinaryPublicId').lean();
+  const videoIds = videos.map((video) => video._id);
   const publicIds = videos.map((video) => video.cloudinaryPublicId).filter(Boolean);
   await deleteVideoAssets(publicIds);
+
+  const comments = await Comment.find({
+    $or: [{ user: userId }, { video: { $in: videoIds } }],
+  }).select('_id').lean();
+  const commentIds = comments.map((comment) => comment._id);
 
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
       await Video.deleteMany({ creator: userId }, { session });
+      await VideoInteraction.deleteMany({
+        $or: [{ user: userId }, { video: { $in: videoIds } }],
+      }, { session });
+      await Comment.deleteMany({
+        $or: [{ user: userId }, { video: { $in: videoIds } }],
+      }, { session });
+      await Subscription.deleteMany({ $or: [{ subscriber: userId }, { creator: userId }] }, { session });
+      await Notification.deleteMany({
+        $or: [
+          { recipient: userId },
+          { video: { $in: videoIds } },
+          { comment: { $in: commentIds } },
+        ],
+      }, { session });
+      await Notification.updateMany({ actor: userId }, { $set: { actor: null } }, { session });
+      await Review.deleteMany({ $or: [{ reviewer: userId }, { creator: userId }] }, { session });
+      await Report.deleteMany({ $or: [{ reporter: userId }, { targetType: 'user', targetId: userId.toString() }] }, { session });
+      await Report.updateMany({ resolvedBy: userId }, { $unset: { resolvedBy: 1 } }, { session });
       await RefreshToken.deleteMany({ user: userId }, { session });
       await User.deleteOne({ _id: userId }, { session });
     });

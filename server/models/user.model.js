@@ -46,7 +46,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['user', 'admin'],
+      enum: ['user', 'creator', 'admin'],
       default: 'user',
     },
     isActive: {
@@ -56,6 +56,8 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+userSchema.index({ role: 1, isActive: 1 });
 
 userSchema.pre('save', async function () {
   if (!this.isModified('password')) return;

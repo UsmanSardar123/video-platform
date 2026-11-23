@@ -23,7 +23,7 @@ describe('authentication service', () => {
     User.findOne.mockResolvedValue(null);
     User.create.mockResolvedValue(user);
     const result = await auth.register({ username: 'creator', email: 'creator@example.com', password: 'secret-password', fullName: 'Creator' });
-    expect(User.create).toHaveBeenCalledWith(expect.objectContaining({ password: 'secret-password' }));
+    expect(User.create).toHaveBeenCalledWith(expect.objectContaining({ password: 'secret-password', role: 'user' }));
     expect(result.user).toMatchObject({ id: '507f1f77bcf86cd799439011', username: 'creator' });
     expect(result).not.toHaveProperty('user.password');
     expect(jwt.verify(result.accessToken, process.env.JWT_ACCESS_SECRET).sub).toBe(user._id.toString());
@@ -45,6 +45,15 @@ describe('authentication service', () => {
     User.findOne.mockReturnValue({ select: jest.fn().mockResolvedValue(user) });
     await expect(auth.login({ email: user.email, password: 'valid' })).resolves.toHaveProperty('accessToken');
     await expect(auth.login({ email: user.email, password: 'invalid' })).rejects.toMatchObject({ statusCode: 401, message: 'Invalid email or password' });
+  });
+
+  test('checks a required role before issuing any tokens', async () => {
+    user.comparePassword.mockResolvedValue(true);
+    User.findOne.mockReturnValue({ select: jest.fn().mockResolvedValue(user) });
+    RefreshToken.create.mockClear();
+    await expect(auth.login({ email: user.email, password: 'valid', requiredRole: 'admin' }))
+      .rejects.toMatchObject({ statusCode: 403 });
+    expect(RefreshToken.create).not.toHaveBeenCalled();
   });
 
   test('rotates a refresh token atomically and rejects reuse', async () => {

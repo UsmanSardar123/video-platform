@@ -81,7 +81,7 @@ const handleAddComment = async (req, res, next) => {
 
 const handleGetComments = async (req, res, next) => {
   try {
-    const comments = await interactionService.getComments(req.params.id);
+    const comments = await interactionService.getComments(req.params.id, req.user?.id);
     res.status(200).json({ success: true, data: comments });
   } catch (error) { next(error); }
 };

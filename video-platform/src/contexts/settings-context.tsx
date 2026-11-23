@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { clearHistory } from '@/lib/video-service';
+import { useAuth } from '@/contexts/auth-context';
 
 export type AppSettings = {
   autoplay: boolean;
@@ -35,11 +36,14 @@ type SettingsContextValue = {
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 
-async function readSettings(): Promise<AppSettings> {
+const settingsKey = (userId: string | null) => `${SETTINGS_KEY}:${userId ?? 'guest'}`;
+
+async function readSettings(userId: string | null): Promise<AppSettings> {
+  const key = settingsKey(userId);
   try {
     const raw = Platform.OS === 'web'
-      ? globalThis.localStorage?.getItem(SETTINGS_KEY)
-      : await SecureStore.getItemAsync(SETTINGS_KEY);
+      ? globalThis.localStorage?.getItem(key)
+      : await SecureStore.getItemAsync(key);
     if (!raw) return DEFAULT_SETTINGS;
     return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
   } catch {
@@ -47,13 +51,14 @@ async function readSettings(): Promise<AppSettings> {
   }
 }
 
-async function writeSettings(settings: AppSettings) {
+async function writeSettings(userId: string | null, settings: AppSettings) {
+  const key = settingsKey(userId);
   try {
     const json = JSON.stringify(settings);
     if (Platform.OS === 'web') {
-      globalThis.localStorage?.setItem(SETTINGS_KEY, json);
+      globalThis.localStorage?.setItem(key, json);
     } else {
-      await SecureStore.setItemAsync(SETTINGS_KEY, json);
+      await SecureStore.setItemAsync(key, json);
     }
   } catch {
     // Non-blocking in-memory fallback
@@ -61,27 +66,35 @@ async function writeSettings(settings: AppSettings) {
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [settingsOwnerId, setSettingsOwnerId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
-    void readSettings().then((saved) => {
+    void readSettings(userId).then((saved) => {
       if (mounted) {
         setSettings(saved);
+        setSettingsOwnerId(userId);
         setLoading(false);
       }
     });
     return () => { mounted = false; };
-  }, []);
+  }, [userId]);
+
+  const visibleSettings = settingsOwnerId === userId ? settings : DEFAULT_SETTINGS;
 
   const updateSettings = useCallback(async (partial: Partial<AppSettings>) => {
     setSettings((current) => {
-      const updated = { ...current, ...partial };
-      void writeSettings(updated);
+      const base = settingsOwnerId === userId ? current : DEFAULT_SETTINGS;
+      const updated = { ...base, ...partial };
+      void writeSettings(userId, updated);
       return updated;
     });
-  }, []);
+    setSettingsOwnerId(userId);
+  }, [settingsOwnerId, userId]);
 
   const clearLocalCache = useCallback(async () => {
     // Safely clear transient cache keys without affecting user tokens or uploads
@@ -106,8 +119,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ settings, loading, updateSettings, clearLocalCache, clearWatchHistory }),
-    [settings, loading, updateSettings, clearLocalCache, clearWatchHistory]
+    () => ({ settings: visibleSettings, loading: loading || settingsOwnerId !== userId, updateSettings, clearLocalCache, clearWatchHistory }),
+    [visibleSettings, loading, settingsOwnerId, userId, updateSettings, clearLocalCache, clearWatchHistory]
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

@@ -49,10 +49,12 @@ import {
 } from '@/types/video';
 
 type LibraryTab = 'uploads' | 'watch-later' | 'liked';
+type CreatorAnalytics = { totalVideos: number; totalViews: number; totalLikes: number; totalDislikes: number };
 
 export default function ProfileScreen() {
   const { userId } = useLocalSearchParams<{ userId?: string }>();
   const { user, loading: authLoading, logout, deleteAccount, updateProfile } = useAuth();
+  const canManageUploads = user?.role === 'creator';
   const { mode } = useThemeMode();
   const { showToast } = useToast();
   const { unreadCount } = useNotifications();
@@ -97,8 +99,9 @@ export default function ProfileScreen() {
   const [deletingReview, setDeletingReview] = useState(false);
 
   // Own Library State
-  const [activeTab, setActiveTab] = useState<LibraryTab>('uploads');
+  const [activeTab, setActiveTab] = useState<LibraryTab>(() => (user?.role === 'creator' ? 'uploads' : 'watch-later'));
   const [myVideos, setMyVideos] = useState<VideoRecord[]>([]);
+  const [creatorAnalytics, setCreatorAnalytics] = useState<CreatorAnalytics>({ totalVideos: 0, totalViews: 0, totalLikes: 0, totalDislikes: 0 });
   const [watchLaterVideos, setWatchLaterVideos] = useState<VideoRecord[]>([]);
   const [likedVideos, setLikedVideos] = useState<VideoRecord[]>([]);
   const [historyVideos, setHistoryVideos] = useState<(VideoRecord & { watchedAt?: string })[]>([]);
@@ -200,8 +203,11 @@ export default function ProfileScreen() {
     setLoading(true);
     setError('');
     try {
-      const [mineRes, watchLater, liked, history, statusRes, reviewData] = await Promise.all([
-        apiRequest<VideoRecord[]>('/api/videos/mine'),
+      const [mineRes, analyticsRes, watchLater, liked, history, statusRes, reviewData] = await Promise.all([
+        canManageUploads ? apiRequest<VideoRecord[]>('/api/videos/mine') : Promise.resolve({ data: [] as VideoRecord[] }),
+        canManageUploads
+          ? apiRequest<CreatorAnalytics>('/api/videos/mine/analytics').catch(() => ({ data: { totalVideos: 0, totalViews: 0, totalLikes: 0, totalDislikes: 0 } }))
+          : Promise.resolve({ data: { totalVideos: 0, totalViews: 0, totalLikes: 0, totalDislikes: 0 } }),
         fetchWatchLater().catch(() => []),
         fetchLikedVideos().catch(() => []),
         fetchHistory().catch(() => []),
@@ -214,6 +220,7 @@ export default function ProfileScreen() {
         })),
       ]);
       setMyVideos(mineRes.data || []);
+      setCreatorAnalytics(analyticsRes.data);
       setWatchLaterVideos(watchLater);
       setLikedVideos(liked);
       setHistoryVideos(history);
@@ -229,12 +236,14 @@ export default function ProfileScreen() {
     }
   }, [
     user,
+    canManageUploads,
     setAverageRating,
     setError,
     setHistoryVideos,
     setLikedVideos,
     setLoading,
     setMyVideos,
+    setCreatorAnalytics,
     setReviews,
     setSubscriberCount,
     setTotalReviews,
@@ -780,7 +789,7 @@ export default function ProfileScreen() {
                     </Text>
                   </Pressable>
                   <Text style={[styles.accountMeta, { color: C.secondary }]}>
-                    {subscriberCount} subscribers • {myVideos.length} uploads
+                    {subscriberCount} subscribers{canManageUploads ? ` • ${creatorAnalytics.totalVideos} uploads • ${formatViews(creatorAnalytics.totalViews)} views` : ''}
                   </Text>
                 </View>
               </View>
@@ -809,7 +818,7 @@ export default function ProfileScreen() {
                   <Text style={[styles.actionChipText, { color: C.text }]}>Edit profile</Text>
                 </Pressable>
 
-                <Pressable
+                {canManageUploads ? <Pressable
                   style={[styles.actionChip, { backgroundColor: Design.color.accent }]}
                   onPress={() => router.push({ pathname: '/upload', params: { returnTo: '/main/profile' } })}
                 >
@@ -819,7 +828,16 @@ export default function ProfileScreen() {
                     tintColor="#fff"
                   />
                   <Text style={[styles.actionChipText, { color: '#fff', fontWeight: '700' }]}>Upload video</Text>
-                </Pressable>
+                </Pressable> : null}
+
+                {user.role === 'admin' ? <Pressable
+                  style={[styles.actionChip, { backgroundColor: C.surfaceRaised, borderColor: C.border }]}
+                  onPress={() => router.push('/admin')}
+                  accessibilityRole="button"
+                >
+                  <SymbolView name={{ ios: 'shield.lefthalf.filled', android: 'admin_panel_settings', web: 'admin_panel_settings' }} size={14} tintColor={C.text} />
+                  <Text style={[styles.actionChipText, { color: C.text }]}>Admin</Text>
+                </Pressable> : null}
 
                 <Pressable
                   style={[styles.actionChip, { backgroundColor: C.surfaceRaised, borderColor: C.border }]}
@@ -1112,7 +1130,7 @@ export default function ProfileScreen() {
                 </Pressable>
 
                 {/* Your Uploads Playlist Card */}
-                <Pressable
+                {isOtherCreator || canManageUploads ? <Pressable
                   style={[
                     styles.playlistHubCard,
                     activeTab === 'uploads' && { borderColor: Design.color.accent, borderWidth: 2 },
@@ -1163,7 +1181,7 @@ export default function ProfileScreen() {
                       </Pressable>
                     ) : null}
                   </View>
-                </Pressable>
+                </Pressable> : null}
               </ScrollView>
             </View>
 
@@ -1175,7 +1193,7 @@ export default function ProfileScreen() {
                   { backgroundColor: C.surfaceRaised, borderColor: C.border, borderWidth: StyleSheet.hairlineWidth },
                 ]}
               >
-                <Pressable
+                {canManageUploads ? <Pressable
                   style={[
                     styles.tabButton,
                     activeTab === 'uploads' && [styles.tabButtonActive, { backgroundColor: C.surface, borderColor: C.border }, !isDark && Design.shadow.sm],
@@ -1191,7 +1209,7 @@ export default function ProfileScreen() {
                   >
                     Your Videos ({myVideos.length})
                   </Text>
-                </Pressable>
+                </Pressable> : null}
 
                 <Pressable
                   style={[
@@ -1402,7 +1420,7 @@ export default function ProfileScreen() {
 
             {/* -------------------- ACCOUNT TOOLS & SHORTCUTS -------------------- */}
             <View style={[styles.utilitySection, { backgroundColor: C.surface, borderColor: C.border, borderWidth: StyleSheet.hairlineWidth }]}>
-              <Pressable
+              {canManageUploads ? <Pressable
                 style={[styles.utilityRow, { borderBottomColor: C.border }]}
                 onPress={() => router.push({ pathname: '/upload', params: { returnTo: '/main/profile' } })}
               >
@@ -1422,7 +1440,7 @@ export default function ProfileScreen() {
                     tintColor={C.muted}
                   />
                 </View>
-              </Pressable>
+              </Pressable> : null}
 
               <Pressable
                 style={[styles.utilityRow, { borderBottomColor: C.border }]}
@@ -1457,9 +1475,9 @@ export default function ProfileScreen() {
                     tintColor={Design.color.danger}
                   />
                   <Text style={[styles.utilityTitle, { color: Design.color.danger }]}>Sign out</Text>
-                </View>
+                  </View>
               </Pressable>
-            </View>
+              </View>
 
             {/* Account Deletion Panel */}
             {showAccountDeletion ? (

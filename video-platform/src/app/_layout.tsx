@@ -3,7 +3,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import { AuthProvider } from '@/contexts/auth-context';
+import { AuthProvider, useAuth } from '@/contexts/auth-context';
 import { ThemeModeProvider, useThemeMode } from '@/contexts/theme-context';
 import { ToastProvider } from '@/contexts/toast-context';
 import { SubscriptionProvider } from '@/contexts/subscription-context';
@@ -17,16 +17,26 @@ export default function RootLayout() {
     <AuthProvider>
       <ThemeModeProvider>
         <ToastProvider>
-          <SubscriptionProvider>
-            <NotificationProvider>
-              <SettingsProvider>
-                <AppNavigator />
-              </SettingsProvider>
-            </NotificationProvider>
-          </SubscriptionProvider>
+          <AccountScopedProviders />
         </ToastProvider>
       </ThemeModeProvider>
     </AuthProvider>
+  );
+}
+
+// Remount private client state when the authenticated account changes so no
+// account-scoped context or screen cache survives an account switch.
+function AccountScopedProviders() {
+  const { user } = useAuth();
+  const accountKey = user?.id ?? 'signed-out';
+  return (
+    <SubscriptionProvider key={`subscriptions-${accountKey}`}>
+      <NotificationProvider key={`notifications-${accountKey}`}>
+        <SettingsProvider key={`settings-${accountKey}`}>
+          <AppNavigator />
+        </SettingsProvider>
+      </NotificationProvider>
+    </SubscriptionProvider>
   );
 }
 
@@ -45,6 +55,7 @@ function AppNavigator() {
       <Stack.Screen name="settings" />
       <Stack.Screen name="change-password" />
       <Stack.Screen name="edit-profile" />
+      <Stack.Screen name="admin" />
     </Stack>
   </ThemeProvider>;
 }

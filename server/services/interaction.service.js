@@ -5,12 +5,21 @@ const Comment = require('../models/comment.model');
 const ApiError = require('../utils/apiError.util');
 const { notifyNewComment } = require('./notificationEvents.service');
 
+const canAccessVideo = (videoId, userId) => Video.exists({
+  _id: videoId,
+  $or: [
+    { visibility: 'public', moderationStatus: 'approved' },
+    { visibility: 'unlisted', moderationStatus: 'approved' },
+    ...(userId ? [{ creator: userId }] : []),
+  ],
+});
+
 const incrementViewCount = async (videoId) => {
   if (!mongoose.Types.ObjectId.isValid(videoId)) {
     throw new ApiError(400, 'Invalid video ID');
   }
   const video = await Video.findByIdAndUpdate(
-    videoId,
+    { _id: videoId, visibility: 'public', moderationStatus: 'approved' },
     { $inc: { views: 1 } },
     { new: true }
   ).lean();
@@ -27,8 +36,7 @@ const setVideoLike = async (userId, videoId, action) => {
     throw new ApiError(400, 'Invalid video ID');
   }
 
-  const video = await Video.findById(videoId).lean();
-  if (!video) throw new ApiError(404, 'Video not found');
+  if (!(await canAccessVideo(videoId, userId))) throw new ApiError(404, 'Video not found');
 
   let update = {};
   if (action === 'like') {
@@ -58,6 +66,8 @@ const getVideoInteraction = async (userId, videoId) => {
     throw new ApiError(400, 'Invalid video ID');
   }
 
+  if (!(await canAccessVideo(videoId, userId))) throw new ApiError(404, 'Video not found');
+
   const [interaction, likeCount] = await Promise.all([
     userId
       ? VideoInteraction.findOne({ user: userId, video: videoId }).lean()
@@ -77,6 +87,8 @@ const setWatchLater = async (userId, videoId, save) => {
   if (!mongoose.Types.ObjectId.isValid(videoId)) {
     throw new ApiError(400, 'Invalid video ID');
   }
+
+  if (!(await canAccessVideo(videoId, userId))) throw new ApiError(404, 'Video not found');
 
   await VideoInteraction.findOneAndUpdate(
     { user: userId, video: videoId },
@@ -101,7 +113,7 @@ const getWatchLaterVideos = async (userId) => {
 
   return interactions
     .map((item) => item.video)
-    .filter((v) => v && v.visibility === 'public');
+    .filter((v) => v && v.visibility === 'public' && v.moderationStatus === 'approved');
 };
 
 const getLikedVideos = async (userId) => {
@@ -118,11 +130,12 @@ const getLikedVideos = async (userId) => {
 
   return interactions
     .map((item) => item.video)
-    .filter((v) => v && v.visibility === 'public');
+    .filter((v) => v && v.visibility === 'public' && v.moderationStatus === 'approved');
 };
 
 const recordHistory = async (userId, videoId) => {
-  if (!mongoose.Types.ObjectId.isValid(videoId)) return;
+  if (!mongoose.Types.ObjectId.isValid(videoId)) throw new ApiError(400, 'Invalid video ID');
+  if (!(await canAccessVideo(videoId, userId))) throw new ApiError(404, 'Video not found');
 
   await VideoInteraction.findOneAndUpdate(
     { user: userId, video: videoId },
@@ -149,7 +162,7 @@ const getHistory = async (userId) => {
       ...item.video,
       watchedAt: item.watchedAt,
     }))
-    .filter((v) => v && v.visibility === 'public');
+    .filter((v) => v && v.visibility === 'public' && v.moderationStatus === 'approved');
 };
 
 const clearHistory = async (userId) => {
@@ -172,6 +185,7 @@ const addComment = async (userId, videoId, text) => {
   if (!mongoose.Types.ObjectId.isValid(videoId)) {
     throw new ApiError(400, 'Invalid video ID');
   }
+  if (!(await canAccessVideo(videoId, userId))) throw new ApiError(404, 'Video not found');
 
   const trimmed = (text || '').trim();
   if (!trimmed) throw new ApiError(400, 'Comment text is required');
@@ -196,10 +210,12 @@ const addComment = async (userId, videoId, text) => {
     .lean();
 };
 
-const getComments = async (videoId) => {
+const getComments = async (videoId, userId) => {
   if (!mongoose.Types.ObjectId.isValid(videoId)) {
     throw new ApiError(400, 'Invalid video ID');
   }
+
+  if (!(await canAccessVideo(videoId, userId))) throw new ApiError(404, 'Video not found');
 
   return Comment.find({ video: videoId })
     .populate('user', 'username fullName avatar')
@@ -212,14 +228,8 @@ const deleteComment = async (userId, commentId) => {
     throw new ApiError(400, 'Invalid comment ID');
   }
 
-  const comment = await Comment.findById(commentId);
+  const comment = await Comment.findOneAndDelete({ _id: commentId, user: userId });
   if (!comment) throw new ApiError(404, 'Comment not found');
-
-  if (comment.user.toString() !== userId) {
-    throw new ApiError(403, 'You can only delete your own comments');
-  }
-
-  await Comment.deleteOne({ _id: commentId });
 };
 
 module.exports = {

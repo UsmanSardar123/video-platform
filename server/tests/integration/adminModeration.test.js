@@ -6,6 +6,7 @@ jest.mock('../../models/video.model');
 jest.mock('../../models/user.model');
 jest.mock('../../models/comment.model');
 jest.mock('../../models/videoInteraction.model');
+jest.mock('../../models/adminAuditLog.model', () => ({ create: jest.fn().mockResolvedValue([]) }));
 jest.mock('../../services/cloudinary.service', () => ({
   deleteVideoAssets: jest.fn().mockResolvedValue(true),
 }));
@@ -38,6 +39,7 @@ jest.mock('../../middleware/auth.middleware', () => {
       }
       next();
     },
+    requireCreator: (req, res, next) => req.user?.role === 'creator' ? next() : res.status(403).json({ success: false }),
   };
 });
 

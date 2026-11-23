@@ -1,11 +1,23 @@
 jest.mock('../../models/user.model', () => ({ findById: jest.fn(), deleteOne: jest.fn() }));
 jest.mock('../../models/video.model', () => ({ find: jest.fn(), deleteMany: jest.fn() }));
 jest.mock('../../models/refreshToken.model', () => ({ deleteMany: jest.fn() }));
+jest.mock('../../models/videoInteraction.model', () => ({ deleteMany: jest.fn() }));
+jest.mock('../../models/comment.model', () => ({ find: jest.fn(), deleteMany: jest.fn() }));
+jest.mock('../../models/subscription.model', () => ({ deleteMany: jest.fn() }));
+jest.mock('../../models/notification.model', () => ({ deleteMany: jest.fn(), updateMany: jest.fn() }));
+jest.mock('../../models/review.model', () => ({ deleteMany: jest.fn() }));
+jest.mock('../../models/report.model', () => ({ deleteMany: jest.fn(), updateMany: jest.fn() }));
 jest.mock('../../services/cloudinary.service', () => ({ deleteVideoAssets: jest.fn() }));
 
 const User = require('../../models/user.model');
 const Video = require('../../models/video.model');
 const RefreshToken = require('../../models/refreshToken.model');
+const VideoInteraction = require('../../models/videoInteraction.model');
+const Comment = require('../../models/comment.model');
+const Subscription = require('../../models/subscription.model');
+const Notification = require('../../models/notification.model');
+const Review = require('../../models/review.model');
+const Report = require('../../models/report.model');
 const { deleteVideoAssets } = require('../../services/cloudinary.service');
 const { deleteAccount } = require('../../services/user.service');
 const mongoose = require('mongoose');
@@ -17,12 +29,21 @@ describe('account deletion', () => {
   test('checks the current password and removes media, records, tokens and account', async () => {
     const user = { comparePassword: jest.fn().mockResolvedValue(true) };
     User.findById.mockReturnValue({ select: jest.fn().mockResolvedValue(user) });
-    Video.find.mockReturnValue({ select: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue([{ cloudinaryPublicId: 'asset-1' }]) });
+    Video.find.mockReturnValue({ select: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue([{ _id: 'video-1', cloudinaryPublicId: 'asset-1' }]) });
+    Comment.find.mockReturnValue({ select: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue([{ _id: 'comment-1' }]) });
     const session = { withTransaction: jest.fn(async (callback) => callback()), endSession: jest.fn() };
     jest.spyOn(mongoose, 'startSession').mockResolvedValue(session);
     await deleteAccount('owner-id', 'correct-password');
     expect(deleteVideoAssets).toHaveBeenCalledWith(['asset-1']);
     expect(Video.deleteMany).toHaveBeenCalledWith({ creator: 'owner-id' }, { session });
+    expect(VideoInteraction.deleteMany).toHaveBeenCalledWith({ $or: [{ user: 'owner-id' }, { video: { $in: ['video-1'] } }] }, { session });
+    expect(Comment.deleteMany).toHaveBeenCalledWith({ $or: [{ user: 'owner-id' }, { video: { $in: ['video-1'] } }] }, { session });
+    expect(Subscription.deleteMany).toHaveBeenCalledWith({ $or: [{ subscriber: 'owner-id' }, { creator: 'owner-id' }] }, { session });
+    expect(Notification.deleteMany).toHaveBeenCalled();
+    expect(Notification.updateMany).toHaveBeenCalledWith({ actor: 'owner-id' }, { $set: { actor: null } }, { session });
+    expect(Review.deleteMany).toHaveBeenCalledWith({ $or: [{ reviewer: 'owner-id' }, { creator: 'owner-id' }] }, { session });
+    expect(Report.deleteMany).toHaveBeenCalled();
+    expect(Report.updateMany).toHaveBeenCalledWith({ resolvedBy: 'owner-id' }, { $unset: { resolvedBy: 1 } }, { session });
     expect(RefreshToken.deleteMany).toHaveBeenCalledWith({ user: 'owner-id' }, { session });
     expect(User.deleteOne).toHaveBeenCalledWith({ _id: 'owner-id' }, { session });
     expect(session.endSession).toHaveBeenCalled();
@@ -38,7 +59,7 @@ describe('account deletion', () => {
   test('does not remove database records when Cloudinary cleanup fails', async () => {
     const user = { comparePassword: jest.fn().mockResolvedValue(true) };
     User.findById.mockReturnValue({ select: jest.fn().mockResolvedValue(user) });
-    Video.find.mockReturnValue({ select: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue([{ cloudinaryPublicId: 'asset-1' }]) });
+    Video.find.mockReturnValue({ select: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue([{ _id: 'video-1', cloudinaryPublicId: 'asset-1' }]) });
     deleteVideoAssets.mockRejectedValueOnce(new Error('Storage unavailable'));
     await expect(deleteAccount('owner-id', 'correct-password')).rejects.toThrow('Storage unavailable');
     expect(Video.deleteMany).not.toHaveBeenCalled();

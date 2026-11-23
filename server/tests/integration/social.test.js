@@ -7,6 +7,8 @@ jest.mock('../../models/user.model', () => ({
 
 jest.mock('../../models/video.model', () => ({
   findById: jest.fn(),
+  findOne: jest.fn(),
+  exists: jest.fn(),
   findByIdAndUpdate: jest.fn(),
   find: jest.fn(),
   countDocuments: jest.fn(),
@@ -58,6 +60,7 @@ jest.mock('../../middleware/auth.middleware', () => ({
     next();
   },
   requireAdmin: (req, res, next) => req.user?.role === 'admin' ? next() : res.status(403).json({ success: false }),
+  requireCreator: (req, res, next) => req.user?.role === 'creator' ? next() : res.status(403).json({ success: false }),
 }));
 
 const User = require('../../models/user.model');
@@ -83,11 +86,17 @@ describe('Social, Subscriptions and Video Interactions', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    Video.findOne.mockReturnValue(chain({
+      _id: videoId,
+      visibility: 'public',
+      moderationStatus: 'approved',
+    }));
+    Video.exists.mockResolvedValue(true);
   });
 
   describe('Subscriptions', () => {
     test('1. an authenticated user can subscribe successfully', async () => {
-      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator1' }));
+      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator1', role: 'creator' }));
       Subscription.findOneAndUpdate.mockResolvedValue({});
       Subscription.countDocuments.mockResolvedValue(10);
 
@@ -101,7 +110,7 @@ describe('Social, Subscriptions and Video Interactions', () => {
     });
 
     test('2. the subscription is persisted in MongoDB using atomic $setOnInsert operator', async () => {
-      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator1' }));
+      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator1', role: 'creator' }));
       Subscription.findOneAndUpdate.mockResolvedValue({});
       Subscription.countDocuments.mockResolvedValue(1);
 
@@ -117,7 +126,7 @@ describe('Social, Subscriptions and Video Interactions', () => {
     });
 
     test('3. the correct target user subscription count is updated', async () => {
-      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator1' }));
+      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator1', role: 'creator' }));
       Subscription.findOneAndUpdate.mockResolvedValue({});
       Subscription.countDocuments.mockResolvedValue(25);
 
@@ -131,7 +140,7 @@ describe('Social, Subscriptions and Video Interactions', () => {
     });
 
     test('4. duplicate subscription requests with code 11000 do not fail and remain idempotent', async () => {
-      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator1' }));
+      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator1', role: 'creator' }));
       const duplicateError = new Error('E11000 duplicate key error');
       duplicateError.code = 11000;
       Subscription.findOneAndUpdate.mockRejectedValue(duplicateError);
@@ -164,7 +173,7 @@ describe('Social, Subscriptions and Video Interactions', () => {
     });
 
     test('6. subscription counts remain consistent after subscribing and unsubscribing', async () => {
-      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator1' }));
+      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator1', role: 'creator' }));
       Subscription.findOneAndUpdate.mockResolvedValue({});
       Subscription.countDocuments.mockResolvedValueOnce(5);
 
@@ -219,7 +228,7 @@ describe('Social, Subscriptions and Video Interactions', () => {
     });
 
     test('11. database or server failures return appropriate error responses', async () => {
-      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator1' }));
+      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator1', role: 'creator' }));
       Subscription.findOneAndUpdate.mockRejectedValue(new Error('Database disk error'));
 
       const response = await request(app)

@@ -41,7 +41,7 @@ const subscribe = async (subscriberId, creatorId) => {
   }
 
   const creator = await User.findById(creatorId).lean();
-  if (!creator) {
+  if (!creator || creator.role !== 'creator') {
     throw new ApiError(404, 'Creator not found.');
   }
 
@@ -124,6 +124,7 @@ const getSubscriptionsFeed = async (subscriberId, { page = 1, limit = 20 } = {})
   const filter = {
     creator: { $in: creatorIds },
     visibility: 'public',
+    moderationStatus: 'approved',
   };
 
   const [videos, total] = await Promise.all([

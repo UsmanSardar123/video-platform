@@ -87,6 +87,7 @@ const register = async ({
       email,
       password,
       fullName,
+      role: 'user',
     });
 
     return issueTokens(user);
@@ -102,7 +103,7 @@ const register = async ({
   }
 };
 
-const login = async ({ email, password }) => {
+const login = async ({ email, password, requiredRole }) => {
   const user = await User.findOne({ email }).select('+password');
 
   if (!user || !(await user.comparePassword(password))) {
@@ -113,6 +114,12 @@ const login = async ({ email, password }) => {
 
   if (!user.isActive) {
     const error = new Error('This account is disabled');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (requiredRole && user.role !== requiredRole) {
+    const error = new Error('You do not have permission to sign in here');
     error.statusCode = 403;
     throw error;
   }

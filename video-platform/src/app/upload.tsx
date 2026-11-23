@@ -205,6 +205,7 @@ export default function UploadScreen() {
 
   if (authLoading) return <SafeAreaView edges={['top']} style={[styles.center, { backgroundColor: C.background }]}><ActivityIndicator color={C.accent} /></SafeAreaView>;
   if (!user) return <Redirect href={{ pathname: '/auth', params: { returnTo: '/upload' } }} />;
+  if (user.role !== 'creator') return <Redirect href="/main/profile" />;
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: C.background }]} edges={['top']}>

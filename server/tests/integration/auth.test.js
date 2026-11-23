@@ -18,6 +18,11 @@ describe('authentication API', () => {
     expect(response.status).toBe(201);
     expect(response.body.data).toEqual(tokens);
     expect(authService.register).toHaveBeenCalledWith({ username: 'creator', email: 'creator@example.com', password: 'secret-password', fullName: 'Creator' });
+    const roleEscalation = await request(app).post('/api/auth/register').send({
+      username: 'admin_try', email: 'admin-try@example.com', password: 'secret-password', role: 'admin',
+    });
+    expect(roleEscalation.status).toBe(400);
+    expect(authService.register).toHaveBeenCalledTimes(1);
   });
 
   test('returns a useful unauthorized response for invalid credentials', async () => {

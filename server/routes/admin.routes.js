@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const rateLimit = require('express-rate-limit');
 const { authenticate, requireAdmin } = require('../middleware/auth.middleware');
 const authService = require('../services/auth.service');
 const { deleteVideoAssets } = require('../services/cloudinary.service');
@@ -9,16 +10,39 @@ const Subscription = require('../models/subscription.model');
 const Comment = require('../models/comment.model');
 const VideoInteraction = require('../models/videoInteraction.model');
 const Report = require('../models/report.model');
+const AdminAuditLog = require('../models/adminAuditLog.model');
+const RefreshToken = require('../models/refreshToken.model');
 
 const router = express.Router();
+const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many authentication attempts. Try again later.' },
+});
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+const auditAdminRead = (resourceType) => async (req, res, next) => {
+  try {
+    await AdminAuditLog.create({
+      actor: req.user.id,
+      action: `admin.${resourceType}.read`,
+      resourceType: resourceType === 'videos' ? 'video' : 'report',
+      resourceId: isValidObjectId(req.params.id) ? req.params.id : null,
+    });
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+};
 
 /**
  * POST /api/admin/auth/login
  * Dedicated admin login verifying email, password, and admin role on the server.
  */
-router.post('/auth/login', async (req, res, next) => {
+router.post('/auth/login', adminLoginLimiter, async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -28,15 +52,7 @@ router.post('/auth/login', async (req, res, next) => {
       });
     }
 
-    const result = await authService.login({ email, password });
-
-    if (result.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Administrator privileges required.',
-        userRole: result.user.role,
-      });
-    }
+    const result = await authService.login({ email, password, requiredRole: 'admin' });
 
     res.status(200).json({
       success: true,
@@ -86,7 +102,7 @@ router.get('/stats', authenticate, requireAdmin, async (req, res, next) => {
       User.find()
         .sort({ createdAt: -1 })
         .limit(5)
-        .select('username email fullName avatar role createdAt isActive')
+        .select('username fullName avatar role createdAt isActive')
         .lean(),
       Video.find()
         .sort({ createdAt: -1 })
@@ -132,7 +148,7 @@ router.get('/users', authenticate, requireAdmin, async (req, res, next) => {
 
     if (search) {
       const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.$or = [{ username: searchRegex }, { email: searchRegex }, { fullName: searchRegex }];
+      filter.$or = [{ username: searchRegex }, { fullName: searchRegex }];
     }
 
     if (role && role !== 'all') {
@@ -144,7 +160,7 @@ router.get('/users', authenticate, requireAdmin, async (req, res, next) => {
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .select('username email fullName avatar bio role createdAt isActive')
+        .select('username fullName avatar bio role createdAt isActive')
         .lean(),
       User.countDocuments(filter),
     ]);
@@ -176,11 +192,68 @@ router.get('/users', authenticate, requireAdmin, async (req, res, next) => {
   }
 });
 
+/** Assign a role explicitly; public registration cannot assign or modify roles. */
+router.patch('/users/:id/role', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid user ID format' });
+    }
+    if (Object.keys(req.body || {}).some((key) => key !== 'role')) {
+      return res.status(400).json({ success: false, message: 'Only the role field is allowed' });
+    }
+    const { role } = req.body;
+    if (!['user', 'creator', 'admin'].includes(role)) {
+      return res.status(400).json({ success: false, message: 'Role must be user, creator, or admin' });
+    }
+
+    const session = await mongoose.startSession();
+    let updated;
+    try {
+      await session.withTransaction(async () => {
+        const target = await User.findById(req.params.id).session(session);
+        if (!target) throw Object.assign(new Error('User not found'), { statusCode: 404 });
+        const previousRole = target.role;
+        if (previousRole === role) {
+          updated = { id: target._id.toString(), role };
+          return;
+        }
+        if (previousRole === 'admin' && role !== 'admin' && target.isActive) {
+          const activeAdmins = await User.countDocuments({ role: 'admin', isActive: true }).session(session);
+          if (activeAdmins <= 1) {
+            throw Object.assign(new Error('The last active administrator cannot be demoted'), { statusCode: 409 });
+          }
+        }
+
+        target.role = role;
+        await target.save({ session });
+        await RefreshToken.updateMany(
+          { user: target._id, revokedAt: null },
+          { $set: { revokedAt: new Date() } },
+          { session }
+        );
+        await AdminAuditLog.create([{
+          actor: req.user.id,
+          target: target._id,
+          action: 'user.role.changed',
+          details: { from: previousRole, to: role },
+        }], { session });
+        updated = { id: target._id.toString(), role };
+      });
+    } finally {
+      await session.endSession();
+    }
+
+    return res.status(200).json({ success: true, message: 'User role updated', data: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
 /**
  * GET /api/admin/videos
  * Real paginated video catalog for admin with moderation status, category, and search filters
  */
-router.get('/videos', authenticate, requireAdmin, async (req, res, next) => {
+router.get('/videos', authenticate, requireAdmin, auditAdminRead('videos'), async (req, res, next) => {
   try {
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
@@ -222,7 +295,7 @@ router.get('/videos', authenticate, requireAdmin, async (req, res, next) => {
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .populate('creator', 'username fullName avatar email role')
+      .populate('creator', 'username fullName avatar role')
         .populate('moderatedBy', 'username fullName')
         .lean(),
       Video.countDocuments(filter),
@@ -254,7 +327,7 @@ router.get('/videos', authenticate, requireAdmin, async (req, res, next) => {
  * GET /api/admin/videos/pending
  * Dedicated queue for videos awaiting moderation review
  */
-router.get('/videos/pending', authenticate, requireAdmin, async (req, res, next) => {
+router.get('/videos/pending', authenticate, requireAdmin, auditAdminRead('videos'), async (req, res, next) => {
   try {
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
@@ -266,7 +339,7 @@ router.get('/videos/pending', authenticate, requireAdmin, async (req, res, next)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .populate('creator', 'username fullName avatar email role')
+      .populate('creator', 'username fullName avatar role')
         .lean(),
       Video.countDocuments(filter),
     ]);
@@ -290,14 +363,14 @@ router.get('/videos/pending', authenticate, requireAdmin, async (req, res, next)
  * GET /api/admin/videos/:id
  * Video inspector endpoint
  */
-router.get('/videos/:id', authenticate, requireAdmin, async (req, res, next) => {
+router.get('/videos/:id', authenticate, requireAdmin, auditAdminRead('videos'), async (req, res, next) => {
   try {
     if (!isValidObjectId(req.params.id)) {
       return res.status(400).json({ success: false, message: 'Invalid video ID format' });
     }
 
     const video = await Video.findById(req.params.id)
-      .populate('creator', 'username fullName avatar email role createdAt')
+      .populate('creator', 'username fullName avatar role createdAt')
       .populate('moderatedBy', 'username fullName')
       .lean();
 
@@ -343,7 +416,7 @@ router.patch('/videos/:id/approve', authenticate, requireAdmin, async (req, res,
     await video.save();
 
     const populated = await Video.findById(video._id)
-      .populate('creator', 'username fullName avatar email')
+      .populate('creator', 'username fullName avatar')
       .populate('moderatedBy', 'username fullName')
       .lean();
 
@@ -396,7 +469,7 @@ router.patch('/videos/:id/reject', authenticate, requireAdmin, async (req, res, 
     await video.save();
 
     const populated = await Video.findById(video._id)
-      .populate('creator', 'username fullName avatar email')
+      .populate('creator', 'username fullName avatar')
       .populate('moderatedBy', 'username fullName')
       .lean();
 
@@ -438,7 +511,7 @@ router.patch('/videos/:id/visibility', authenticate, requireAdmin, async (req, r
     await video.save();
 
     const populated = await Video.findById(video._id)
-      .populate('creator', 'username fullName avatar email')
+      .populate('creator', 'username fullName avatar')
       .lean();
 
     res.status(200).json({
@@ -754,7 +827,7 @@ router.get('/analytics', authenticate, requireAdmin, async (req, res, next) => {
  * GET /api/admin/reports
  * Paginated reports submitted by users or flagged by the platform
  */
-router.get('/reports', authenticate, requireAdmin, async (req, res, next) => {
+router.get('/reports', authenticate, requireAdmin, auditAdminRead('reports'), async (req, res, next) => {
   try {
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
@@ -774,7 +847,7 @@ router.get('/reports', authenticate, requireAdmin, async (req, res, next) => {
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .populate('reporter', 'username fullName avatar email role')
+        .populate('reporter', 'username fullName avatar role')
         .populate('resolvedBy', 'username fullName')
         .lean(),
       Report.countDocuments(filter),
@@ -799,13 +872,12 @@ router.get('/reports', authenticate, requireAdmin, async (req, res, next) => {
           }
         } else if (r.targetType === 'user' && isValidObjectId(r.targetId)) {
           const user = await User.findById(r.targetId)
-            .select('username fullName email avatar role')
+            .select('username fullName avatar role')
             .lean();
           if (user) {
             targetDetails = {
               username: user.username,
               fullName: user.fullName,
-              email: user.email,
             };
           }
         }
@@ -837,15 +909,15 @@ router.get('/reports', authenticate, requireAdmin, async (req, res, next) => {
  * GET /api/admin/reports/:id
  * Retrieve a single report with full target and reporter details
  */
-router.get('/reports/:id', authenticate, requireAdmin, async (req, res, next) => {
+router.get('/reports/:id', authenticate, requireAdmin, auditAdminRead('reports'), async (req, res, next) => {
   try {
     if (!isValidObjectId(req.params.id)) {
       return res.status(400).json({ success: false, message: 'Invalid report ID format' });
     }
 
     const report = await Report.findById(req.params.id)
-      .populate('reporter', 'username fullName avatar email role')
-      .populate('resolvedBy', 'username fullName email')
+      .populate('reporter', 'username fullName avatar role')
+      .populate('resolvedBy', 'username fullName')
       .lean();
 
     if (!report) {
@@ -855,11 +927,11 @@ router.get('/reports/:id', authenticate, requireAdmin, async (req, res, next) =>
     let targetDetails = null;
     if (report.targetType === 'video' && isValidObjectId(report.targetId)) {
       targetDetails = await Video.findById(report.targetId)
-        .populate('creator', 'username fullName email')
+        .populate('creator', 'username fullName')
         .lean();
     } else if (report.targetType === 'user' && isValidObjectId(report.targetId)) {
       targetDetails = await User.findById(report.targetId)
-        .select('username fullName email avatar role createdAt')
+        .select('username fullName avatar role createdAt')
         .lean();
     }
 
@@ -914,7 +986,7 @@ router.patch('/reports/:id', authenticate, requireAdmin, async (req, res, next) 
     await report.save();
 
     const populated = await Report.findById(report._id)
-      .populate('reporter', 'username fullName email')
+      .populate('reporter', 'username fullName avatar role')
       .populate('resolvedBy', 'username fullName')
       .lean();
 
@@ -1034,7 +1106,7 @@ router.get('/activity', authenticate, requireAdmin, async (req, res, next) => {
         id: 'usr_' + u._id.toString(),
         type: 'user_registered',
         title: 'New User Registered: @' + u.username,
-        description: 'Account created with email ' + (u.fullName ? '(' + u.fullName + ')' : ''),
+        description: `New account for @${u.username}`,
         timestamp: u.createdAt,
         severity: 'success',
       });

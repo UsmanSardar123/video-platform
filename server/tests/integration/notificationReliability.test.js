@@ -19,6 +19,7 @@ jest.mock('../../models/user.model', () => ({
 
 jest.mock('../../models/video.model', () => ({
   findById: jest.fn(),
+  exists: jest.fn(),
   findOne: jest.fn(),
   find: jest.fn(),
   create: jest.fn(),
@@ -68,6 +69,7 @@ jest.mock('../../middleware/auth.middleware', () => ({
     next();
   },
   requireAdmin: (req, res, next) => req.user?.role === 'admin' ? next() : res.status(403).json({ success: false }),
+  requireCreator: (req, res, next) => req.user?.role === 'creator' ? next() : res.status(403).json({ success: false }),
 }));
 
 const Notification = require('../../models/notification.model');
@@ -96,6 +98,7 @@ const chain = (result) => ({
 describe('Sprint 5: Final Reliability Verification', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    Video.exists.mockResolvedValue(true);
   });
 
   describe('1. Cross-User Privacy and Ownership Isolation', () => {
@@ -224,7 +227,7 @@ describe('Sprint 5: Final Reliability Verification', () => {
   describe('4. Multi-User Event Generation Flow', () => {
     test('User A subscribing to Creator B notifies Creator B', async () => {
       User.findById
-        .mockReturnValueOnce(chain({ _id: userB, username: 'bob', fullName: 'Bob Builder' }))
+        .mockReturnValueOnce(chain({ _id: userB, username: 'bob', fullName: 'Bob Builder', role: 'creator' }))
         .mockReturnValueOnce(chain({ _id: userA, username: 'alice', fullName: 'Alice' }));
       Subscription.findOneAndUpdate.mockResolvedValue({});
       Subscription.countDocuments.mockResolvedValue(1);
@@ -289,7 +292,7 @@ describe('Sprint 5: Final Reliability Verification', () => {
 
   describe('5. Core Action Resilience on Notification Failure', () => {
     test('Subscription succeeds even if notification database call errors', async () => {
-      User.findById.mockReturnValue(chain({ _id: userB, username: 'bob', fullName: 'Bob' }));
+      User.findById.mockReturnValue(chain({ _id: userB, username: 'bob', fullName: 'Bob', role: 'creator' }));
       Subscription.findOneAndUpdate.mockResolvedValue({});
       Subscription.countDocuments.mockResolvedValue(5);
       Notification.updateOne.mockRejectedValue(new Error('Notification connection timeout'));

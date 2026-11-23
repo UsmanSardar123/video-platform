@@ -217,7 +217,7 @@ router.get('/:id', async (req, res, next) => {
           fullName: user.fullName,
           avatar: user.avatar,
           bio: user.bio,
-          role: user.role,
+          role: user.role === 'creator' ? 'creator' : 'user',
           createdAt: user.createdAt,
         },
       },
@@ -286,8 +286,8 @@ router.post('/:id/reviews', authenticate, async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'You cannot review yourself' });
     }
 
-    const creator = await User.findById(id).lean();
-    if (!creator) {
+    const creator = await User.findById(id).select('role').lean();
+    if (!creator || creator.role !== 'creator') {
       return res.status(404).json({ success: false, message: 'Creator not found' });
     }
 

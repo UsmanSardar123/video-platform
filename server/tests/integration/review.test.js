@@ -26,6 +26,7 @@ jest.mock('../../middleware/auth.middleware', () => ({
     next();
   },
   requireAdmin: (req, res, next) => req.user?.role === 'admin' ? next() : res.status(403).json({ success: false }),
+  requireCreator: (req, res, next) => req.user?.role === 'creator' ? next() : res.status(403).json({ success: false }),
 }));
 
 const User = require('../../models/user.model');
@@ -86,7 +87,9 @@ describe('Creator Reviews API', () => {
   describe('POST /api/users/:id/reviews', () => {
     test('submits a review for a creator successfully', async () => {
       User.findById.mockReturnValue({
-        lean: jest.fn().mockResolvedValue({ _id: creatorId, username: 'creator1' }),
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({ _id: creatorId, role: 'creator' }),
+        }),
       });
 
       const savedReview = {

@@ -3,6 +3,7 @@ jest.mock('../../middleware/auth.middleware', () => ({
   authenticate: (req, _res, next) => { req.user = { id: '507f1f77bcf86cd799439011' }; next(); },
   optionalAuthenticate: (_req, _res, next) => next(),
   requireAdmin: (req, res, next) => req.user?.role === 'admin' ? next() : res.status(403).json({ success: false }),
+  requireCreator: (req, res, next) => req.user?.role === 'creator' ? next() : res.status(403).json({ success: false }),
 }));
 jest.mock('../../models/user.model', () => ({ findById: jest.fn() }));
 jest.mock('../../services/user.service', () => ({
