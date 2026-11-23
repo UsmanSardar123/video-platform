@@ -5,7 +5,7 @@ jest.mock('../../middleware/auth.middleware', () => ({
   requireAdmin: (req, res, next) => req.user?.role === 'admin' ? next() : res.status(403).json({ success: false }),
   requireCreator: (req, res, next) => req.user?.role === 'creator' ? next() : res.status(403).json({ success: false }),
 }));
-jest.mock('../../models/user.model', () => ({ findById: jest.fn() }));
+jest.mock('../../models/user.model', () => ({ findById: jest.fn(), findByIdAndUpdate: jest.fn() }));
 jest.mock('../../services/user.service', () => ({
   deleteAccount: jest.fn(),
   changeEmail: jest.fn(),
@@ -57,5 +57,43 @@ describe('current user profile API', () => {
     const response = await request(app).delete('/api/users/me').send({ password: 'current-password' });
     expect(response.status).toBe(200);
     expect(deleteAccount).toHaveBeenCalledWith('507f1f77bcf86cd799439011', 'current-password');
+  });
+
+  test('reads and updates persisted user preferences with strict validation', async () => {
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ preferences: { autoplay: false, dataSaver: true } }),
+      }),
+    });
+    const getRes = await request(app).get('/api/users/me/preferences');
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.data).toMatchObject({
+      autoplay: false,
+      dataSaver: true,
+      startMuted: false,
+      historyPaused: false,
+    });
+
+    const badField = await request(app).patch('/api/users/me/preferences').send({ unknownFlag: true });
+    expect(badField.status).toBe(400);
+
+    const badType = await request(app).patch('/api/users/me/preferences').send({ autoplay: 'yes' });
+    expect(badType.status).toBe(400);
+
+    User.findByIdAndUpdate.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ preferences: { autoplay: false, historyPaused: true } }),
+      }),
+    });
+    const patchRes = await request(app)
+      .patch('/api/users/me/preferences')
+      .send({ autoplay: false, historyPaused: true });
+    expect(patchRes.status).toBe(200);
+    expect(patchRes.body.data).toMatchObject({ autoplay: false, historyPaused: true });
+    expect(User.findByIdAndUpdate).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439011',
+      { $set: { 'preferences.autoplay': false, 'preferences.historyPaused': true } },
+      { new: true }
+    );
   });
 });

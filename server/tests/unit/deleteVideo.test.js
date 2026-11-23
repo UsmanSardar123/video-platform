@@ -1,4 +1,8 @@
 jest.mock('../../models/video.model', () => ({ findById: jest.fn(), deleteOne: jest.fn() }));
+jest.mock('../../models/comment.model', () => ({ deleteMany: jest.fn().mockResolvedValue({}) }));
+jest.mock('../../models/videoInteraction.model', () => ({ deleteMany: jest.fn().mockResolvedValue({}) }));
+jest.mock('../../models/notification.model', () => ({ deleteMany: jest.fn().mockResolvedValue({}) }));
+jest.mock('../../models/report.model', () => ({ deleteMany: jest.fn().mockResolvedValue({}) }));
 jest.mock('../../services/cloudinary.service', () => ({ deleteVideoAssets: jest.fn(), verifyUploadedAsset: jest.fn() }));
 
 const Video = require('../../models/video.model');

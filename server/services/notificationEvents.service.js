@@ -87,6 +87,7 @@ const notifyNewComment = async ({ commentId, videoId, commenterId, text }) => {
 const notifyNewVideo = async (video) => {
   try {
     if (!video || video.visibility !== 'public' || !video.creator) return;
+    if (video.moderationStatus && video.moderationStatus !== 'approved') return;
     const creatorId = video.creator;
     const name = await displayName(creatorId);
     if (!name) return;
@@ -95,7 +96,7 @@ const notifyNewVideo = async (video) => {
     let lastId = null;
 
     for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
-      const filter = { creator: creatorId };
+      const filter = { creator: creatorId, notificationLevel: { $ne: 'none' } };
       if (lastId) filter._id = { $gt: lastId };
       const subs = await Subscription.find(filter)
         .sort({ _id: 1 })

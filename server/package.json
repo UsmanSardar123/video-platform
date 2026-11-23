@@ -35,8 +35,8 @@
     ],
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "tests/unit/",
-      "tests/integration/(auth|search|user|video)\\.test\\.js"
+      "tests/integration/(search|video)\\.test\\.js",
+      "tests/unit/(user|video|upload)\\.test\\.js"
     ],
     "verbose": true,
     "clearMocks": true

@@ -3,6 +3,7 @@ const { authenticate, optionalAuthenticate } = require('../middleware/auth.middl
 const {
   handleSubscribe,
   handleUnsubscribe,
+  handleUpdateNotificationPreference,
   handleGetSubscriptions,
   handleGetSubscriptionsFeed,
   handleGetSubscriptionStatus,
@@ -16,6 +17,7 @@ router.use(authenticate);
 
 router.get('/', handleGetSubscriptions);
 router.get('/feed', handleGetSubscriptionsFeed);
+router.patch('/:creatorId/notifications', handleUpdateNotificationPreference);
 router.post('/:creatorId', handleSubscribe);
 router.delete('/:creatorId', handleUnsubscribe);
 

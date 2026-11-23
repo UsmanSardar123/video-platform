@@ -8,7 +8,7 @@ jest.mock('../../models/subscription.model', () => ({
   countDocuments: jest.fn(),
 }));
 jest.mock('../../models/user.model', () => ({ findById: jest.fn() }));
-jest.mock('../../models/video.model', () => ({ findById: jest.fn() }));
+jest.mock('../../models/video.model', () => ({ findById: jest.fn(), exists: jest.fn() }));
 jest.mock('../../models/videoInteraction.model', () => ({}));
 jest.mock('../../models/comment.model', () => ({ create: jest.fn(), findById: jest.fn() }));
 
@@ -55,6 +55,7 @@ describe('notification event generation', () => {
     jest.clearAllMocks();
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     User.findById.mockReturnValue(chain({ _id: actorId, username: 'alice', fullName: 'Alice A' }));
+    Video.exists.mockResolvedValue(true);
     Notification.updateOne.mockResolvedValue({ upsertedCount: 1 });
     Notification.insertMany.mockResolvedValue([]);
   });
@@ -100,7 +101,7 @@ describe('notification event generation', () => {
     });
 
     test('subscribe still succeeds when notification creation fails', async () => {
-      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator' }));
+      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator', role: 'creator' }));
       Subscription.findOneAndUpdate.mockResolvedValue({});
       Subscription.countDocuments.mockResolvedValue(3);
       Notification.updateOne.mockRejectedValue(new Error('db down'));
@@ -109,7 +110,7 @@ describe('notification event generation', () => {
     });
 
     test('subscribe notifies the creator', async () => {
-      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator', fullName: 'Creator' }));
+      User.findById.mockReturnValue(chain({ _id: creatorId, username: 'creator', fullName: 'Creator', role: 'creator' }));
       Subscription.findOneAndUpdate.mockResolvedValue({});
       Subscription.countDocuments.mockResolvedValue(1);
       await subscriptionService.subscribe(actorId, creatorId);
@@ -220,14 +221,24 @@ describe('notification event generation', () => {
       await notifyNewVideo(video);
       expect(Subscription.find).toHaveBeenCalledTimes(3);
       expect(Notification.insertMany).toHaveBeenCalledTimes(3);
-      expect(calls[0]).toEqual({ creator: creatorId });
-      expect(calls[1]).toEqual({ creator: creatorId, _id: { $gt: `sub${BATCH_SIZE - 1}` } });
+      expect(calls[0]).toEqual({ creator: creatorId, notificationLevel: { $ne: 'none' } });
+      expect(calls[1]).toEqual({
+        creator: creatorId,
+        notificationLevel: { $ne: 'none' },
+        _id: { $gt: `sub${BATCH_SIZE - 1}` },
+      });
       Notification.insertMany.mock.calls.forEach(([docs]) =>
         expect(docs.length).toBeLessThanOrEqual(BATCH_SIZE));
     });
 
     test('does not notify for non-public videos', async () => {
       await notifyNewVideo({ ...video, visibility: 'private' });
+      expect(Subscription.find).not.toHaveBeenCalled();
+      expect(Notification.insertMany).not.toHaveBeenCalled();
+    });
+
+    test('does not notify for videos pending moderation', async () => {
+      await notifyNewVideo({ ...video, moderationStatus: 'pending' });
       expect(Subscription.find).not.toHaveBeenCalled();
       expect(Notification.insertMany).not.toHaveBeenCalled();
     });

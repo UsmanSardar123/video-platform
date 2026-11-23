@@ -83,34 +83,92 @@ const unsubscribe = async (subscriberId, creatorId) => {
   return { subscribed: false, subscriberCount };
 };
 
+const ALLOWED_NOTIFICATION_LEVELS = new Set(['all', 'personalized', 'none']);
+
+const updateNotificationPreference = async (subscriberId, creatorId, notificationLevel) => {
+  if (
+    !subscriberId ||
+    !creatorId ||
+    !mongoose.Types.ObjectId.isValid(subscriberId) ||
+    !mongoose.Types.ObjectId.isValid(creatorId)
+  ) {
+    throw new ApiError(400, 'Invalid user ID.');
+  }
+
+  if (!ALLOWED_NOTIFICATION_LEVELS.has(notificationLevel)) {
+    throw new ApiError(400, 'notificationLevel must be all, personalized, or none.');
+  }
+
+  const updated = await Subscription.findOneAndUpdate(
+    { subscriber: subscriberId, creator: creatorId },
+    { $set: { notificationLevel } },
+    { new: true }
+  ).lean();
+
+  if (!updated) {
+    throw new ApiError(404, 'Subscription not found.');
+  }
+
+  return {
+    creatorId: String(creatorId),
+    notificationLevel: updated.notificationLevel || 'all',
+  };
+};
+
 const getSubscriptions = async (subscriberId) => {
   const subscriptions = await Subscription.find({ subscriber: subscriberId })
     .populate('creator', 'username fullName avatar bio')
     .sort({ createdAt: -1 })
     .lean();
 
-  const creators = await Promise.all(
-    subscriptions
-      .filter((sub) => sub.creator)
-      .map(async (sub) => {
-        const creator = sub.creator;
-        const [subscriberCount, videoCount] = await Promise.all([
-          getSubscriberCount(creator._id),
-          Video.countDocuments({ creator: creator._id, visibility: 'public' }),
-        ]);
-        return {
-          _id: creator._id,
-          username: creator.username,
-          fullName: creator.fullName,
-          avatar: creator.avatar,
-          bio: creator.bio,
-          subscriberCount,
-          videoCount,
-        };
-      })
-  );
+  const validSubs = subscriptions.filter((sub) => sub.creator);
+  if (!validSubs.length) return [];
 
-  return creators;
+  const creatorIds = validSubs.map((sub) => sub.creator._id);
+
+  // Batch counts via 2 aggregations instead of 2N per-creator count queries.
+  let subCountMap = new Map();
+  let videoCountMap = new Map();
+
+  if (typeof Subscription.aggregate === 'function' && typeof Video.aggregate === 'function') {
+    const [subCounts, videoCounts] = await Promise.all([
+      Subscription.aggregate([
+        { $match: { creator: { $in: creatorIds } } },
+        { $group: { _id: '$creator', count: { $sum: 1 } } },
+      ]),
+      Video.aggregate([
+        { $match: { creator: { $in: creatorIds }, visibility: 'public', moderationStatus: 'approved' } },
+        { $group: { _id: '$creator', count: { $sum: 1 } } },
+      ]),
+    ]);
+    subCountMap = new Map((subCounts || []).map((row) => [String(row._id), row.count]));
+    videoCountMap = new Map((videoCounts || []).map((row) => [String(row._id), row.count]));
+  } else {
+    const counts = await Promise.all(
+      creatorIds.map(async (id) => ({
+        id: String(id),
+        subs: await getSubscriberCount(id),
+        videos: await Video.countDocuments({ creator: id, visibility: 'public', moderationStatus: 'approved' }),
+      }))
+    );
+    subCountMap = new Map(counts.map((c) => [c.id, c.subs]));
+    videoCountMap = new Map(counts.map((c) => [c.id, c.videos]));
+  }
+
+  return validSubs.map((sub) => {
+    const creator = sub.creator;
+    const key = String(creator._id);
+    return {
+      _id: creator._id,
+      username: creator.username,
+      fullName: creator.fullName,
+      avatar: creator.avatar,
+      bio: creator.bio,
+      subscriberCount: subCountMap.get(key) || 0,
+      videoCount: videoCountMap.get(key) || 0,
+      notificationLevel: sub.notificationLevel || 'all',
+    };
+  });
 };
 
 const getSubscriptionsFeed = async (subscriberId, { page = 1, limit = 20 } = {}) => {
@@ -149,6 +207,7 @@ const getSubscriptionsFeed = async (subscriberId, { page = 1, limit = 20 } = {})
 module.exports = {
   subscribe,
   unsubscribe,
+  updateNotificationPreference,
   getSubscriptions,
   getSubscriptionsFeed,
   getSubscriberCount,

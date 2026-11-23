@@ -39,7 +39,7 @@ const getVideoById = async (req, res, next) => {
           { visibility: { $in: ['public', 'unlisted'] }, moderationStatus: 'approved' },
         ],
       }
-      : { _id: req.params.id, visibility: 'public', moderationStatus: 'approved' };
+      : { _id: req.params.id, visibility: { $in: ['public', 'unlisted'] }, moderationStatus: 'approved' };
     const video = await Video.findOne(filter)
       .populate('creator', 'username fullName avatar')
       .lean();

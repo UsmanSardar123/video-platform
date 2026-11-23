@@ -92,5 +92,6 @@ router.delete('/:id/watch-later', authenticate, handleWatchLater);
 router.post('/:id/history', authenticate, handleRecordHistory);
 router.get('/:id/comments', optionalAuthenticate, handleGetComments);
 router.post('/:id/comments', authenticate, handleAddComment);
+router.delete('/:id/comments/:commentId', authenticate, handleDeleteComment);
 
 module.exports = router;

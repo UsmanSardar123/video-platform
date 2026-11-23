@@ -4,14 +4,26 @@ const rateLimit = require('express-rate-limit');
 const { authenticate, requireAdmin } = require('../middleware/auth.middleware');
 const authService = require('../services/auth.service');
 const { deleteVideoAssets } = require('../services/cloudinary.service');
+const { notifyNewVideo } = require('../services/notificationEvents.service');
 const User = require('../models/user.model');
 const Video = require('../models/video.model');
 const Subscription = require('../models/subscription.model');
 const Comment = require('../models/comment.model');
 const VideoInteraction = require('../models/videoInteraction.model');
+const Notification = require('../models/notification.model');
 const Report = require('../models/report.model');
 const AdminAuditLog = require('../models/adminAuditLog.model');
 const RefreshToken = require('../models/refreshToken.model');
+
+const recordAdminAuditSafe = async (payload) => {
+  try {
+    if (typeof AdminAuditLog.create === 'function') {
+      await AdminAuditLog.create(payload);
+    }
+  } catch {
+    // Non-blocking audit write for moderation actions
+  }
+};
 
 const router = express.Router();
 const adminLoginLimiter = rateLimit({
@@ -44,7 +56,8 @@ const auditAdminRead = (resourceType) => async (req, res, next) => {
  */
 router.post('/auth/login', adminLoginLimiter, async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -165,17 +178,27 @@ router.get('/users', authenticate, requireAdmin, async (req, res, next) => {
       User.countDocuments(filter),
     ]);
 
-    // Attach video counts per user
-    const usersWithCounts = await Promise.all(
-      users.map(async (u) => {
-        const videoCount = await Video.countDocuments({ creator: u._id });
-        return {
-          ...u,
-          id: u._id.toString(),
-          videosCount: videoCount,
-        };
-      })
-    );
+    // Attach video counts per user via single aggregation (avoids N+1 queries)
+    let countByCreator = new Map();
+    if (users.length && typeof Video.aggregate === 'function') {
+      const userIds = users.map((u) => u._id);
+      const counts = await Video.aggregate([
+        { $match: { creator: { $in: userIds } } },
+        { $group: { _id: '$creator', count: { $sum: 1 } } },
+      ]);
+      countByCreator = new Map((counts || []).map((row) => [String(row._id), row.count]));
+    } else {
+      const fallback = await Promise.all(
+        users.map(async (u) => [String(u._id), await Video.countDocuments({ creator: u._id })])
+      );
+      countByCreator = new Map(fallback);
+    }
+
+    const usersWithCounts = users.map((u) => ({
+      ...u,
+      id: u._id.toString(),
+      videosCount: countByCreator.get(String(u._id)) || 0,
+    }));
 
     res.status(200).json({
       success: true,
@@ -415,6 +438,16 @@ router.patch('/videos/:id/approve', authenticate, requireAdmin, async (req, res,
 
     await video.save();
 
+    void recordAdminAuditSafe({
+      actor: req.user._id || req.user.id,
+      action: 'video.approved',
+      resourceType: 'video',
+      resourceId: video._id,
+    });
+    setImmediate(() => {
+      void notifyNewVideo(video);
+    });
+
     const populated = await Video.findById(video._id)
       .populate('creator', 'username fullName avatar')
       .populate('moderatedBy', 'username fullName')
@@ -468,6 +501,13 @@ router.patch('/videos/:id/reject', authenticate, requireAdmin, async (req, res, 
 
     await video.save();
 
+    void recordAdminAuditSafe({
+      actor: req.user._id || req.user.id,
+      action: 'video.rejected',
+      resourceType: 'video',
+      resourceId: video._id,
+    });
+
     const populated = await Video.findById(video._id)
       .populate('creator', 'username fullName avatar')
       .populate('moderatedBy', 'username fullName')
@@ -509,6 +549,13 @@ router.patch('/videos/:id/visibility', authenticate, requireAdmin, async (req, r
 
     video.visibility = visibility;
     await video.save();
+
+    void recordAdminAuditSafe({
+      actor: req.user._id || req.user.id,
+      action: 'video.visibility.changed',
+      resourceType: 'video',
+      resourceId: video._id,
+    });
 
     const populated = await Video.findById(video._id)
       .populate('creator', 'username fullName avatar')
@@ -557,7 +604,16 @@ router.delete('/videos/:id', authenticate, requireAdmin, async (req, res, next) 
     await Promise.allSettled([
       Comment.deleteMany({ video: video._id }),
       VideoInteraction.deleteMany({ video: video._id }),
+      Notification.deleteMany({ video: video._id }),
+      Report.deleteMany({ targetType: 'video', targetId: video._id }),
     ]);
+
+    void recordAdminAuditSafe({
+      actor: req.user._id || req.user.id,
+      action: 'video.deleted',
+      resourceType: 'video',
+      resourceId: video._id,
+    });
 
     res.status(200).json({
       success: true,
@@ -880,6 +936,18 @@ router.get('/reports', authenticate, requireAdmin, auditAdminRead('reports'), as
               fullName: user.fullName,
             };
           }
+        } else if (r.targetType === 'comment' && isValidObjectId(r.targetId)) {
+          const comment = await Comment.findById(r.targetId)
+            .select('text video user createdAt')
+            .populate('user', 'username fullName')
+            .lean();
+          if (comment) {
+            targetDetails = {
+              text: comment.text,
+              videoId: comment.video ? String(comment.video) : null,
+              author: comment.user?.username || 'unknown',
+            };
+          }
         }
 
         return {
@@ -933,6 +1001,11 @@ router.get('/reports/:id', authenticate, requireAdmin, auditAdminRead('reports')
       targetDetails = await User.findById(report.targetId)
         .select('username fullName avatar role createdAt')
         .lean();
+    } else if (report.targetType === 'comment' && isValidObjectId(report.targetId)) {
+      targetDetails = await Comment.findById(report.targetId)
+        .select('text video user createdAt')
+        .populate('user', 'username fullName')
+        .lean();
     }
 
     res.status(200).json({
@@ -985,6 +1058,17 @@ router.patch('/reports/:id', authenticate, requireAdmin, async (req, res, next) 
 
     await report.save();
 
+    await recordAdminAuditSafe(req, {
+      action: 'report.updated',
+      targetType: 'report',
+      targetId: report._id,
+      metadata: {
+        status,
+        reportTargetType: report.targetType,
+        reportTargetId: report.targetId ? String(report.targetId) : null,
+      },
+    });
+
     const populated = await Report.findById(report._id)
       .populate('reporter', 'username fullName avatar role')
       .populate('resolvedBy', 'username fullName')
@@ -1001,12 +1085,11 @@ router.patch('/reports/:id', authenticate, requireAdmin, async (req, res, next) 
 });
 
 /**
- * POST /api/admin/reports
- * Submit a real report into MongoDB Atlas (useful for platform tests and moderation reporting)
+ * Shared authenticated report submission handler (mounted at POST /api/reports and POST /api/admin/reports)
  */
-router.post('/reports', authenticate, async (req, res, next) => {
+const createReportHandler = async (req, res, next) => {
   try {
-    const { targetType, targetId, reason, details } = req.body;
+    const { targetType, targetId, reason, details } = req.body || {};
 
     const allowedTypes = ['video', 'user', 'comment'];
     const allowedReasons = [
@@ -1061,7 +1144,9 @@ router.post('/reports', authenticate, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
+};
+
+router.post('/reports', authenticate, createReportHandler);
 
 /**
  * GET /api/admin/activity
@@ -1140,3 +1225,4 @@ router.get('/activity', authenticate, requireAdmin, async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.createReportHandler = createReportHandler;

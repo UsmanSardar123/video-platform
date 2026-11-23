@@ -12,9 +12,19 @@ const { deleteVideoAssets } = require('./cloudinary.service');
 const ApiError = require('../utils/apiError.util');
 
 const deleteAccount = async (userId, password) => {
+  if (typeof password !== 'string' || !password) {
+    throw new ApiError(400, 'Current password is required');
+  }
   const user = await User.findById(userId).select('+password');
   if (!user) throw new ApiError(404, 'User not found');
   if (!(await user.comparePassword(password))) throw new ApiError(401, 'Current password is incorrect');
+
+  if (user.role === 'admin' && user.isActive && typeof User.countDocuments === 'function') {
+    const activeAdmins = await User.countDocuments({ role: 'admin', isActive: true });
+    if (activeAdmins <= 1) {
+      throw new ApiError(409, 'The last active administrator account cannot be deleted');
+    }
+  }
 
   const videos = await Video.find({ creator: userId }).select('_id cloudinaryPublicId').lean();
   const videoIds = videos.map((video) => video._id);
@@ -55,6 +65,9 @@ const deleteAccount = async (userId, password) => {
 };
 
 const changePassword = async (userId, currentPassword, newPassword) => {
+  if (typeof currentPassword !== 'string' || !currentPassword) {
+    throw new ApiError(400, 'Current password is required');
+  }
   if (typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 128) {
     throw new ApiError(400, 'New password must be between 8 and 128 characters');
   }
@@ -77,6 +90,9 @@ const changePassword = async (userId, currentPassword, newPassword) => {
 };
 
 const changeEmail = async (userId, password, nextEmail) => {
+  if (typeof password !== 'string' || !password) {
+    throw new ApiError(400, 'Current password is required');
+  }
   if (typeof nextEmail !== 'string') throw new ApiError(400, 'Enter a valid email address');
   const email = nextEmail.trim().toLowerCase();
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {

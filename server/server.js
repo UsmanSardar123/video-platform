@@ -5,7 +5,7 @@ const dotenv = require('dotenv');
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 const app = require('./app');
-const { connectDB } = require('./config/db.config');
+const { connectDB, disconnectDB } = require('./config/db.config');
 const { validateEnv } = require('./config/env.config');
 
 const PORT = process.env.PORT || 5000;
@@ -25,8 +25,13 @@ const startServer = async () => {
     // Graceful shutdown handling
     const shutdown = (signal) => {
       console.log(`\nReceived ${signal}. Shutting down HTTP server gracefully...`);
-      server.close(() => {
+      server.close(async () => {
         console.log('HTTP server closed.');
+        try {
+          await disconnectDB();
+        } catch (err) {
+          console.error(`Error disconnecting DB: ${err.message}`);
+        }
         process.exit(0);
       });
     };

@@ -18,8 +18,12 @@ const incrementViewCount = async (videoId) => {
   if (!mongoose.Types.ObjectId.isValid(videoId)) {
     throw new ApiError(400, 'Invalid video ID');
   }
-  const video = await Video.findByIdAndUpdate(
-    { _id: videoId, visibility: 'public', moderationStatus: 'approved' },
+  const video = await Video.findOneAndUpdate(
+    {
+      _id: videoId,
+      visibility: { $in: ['public', 'unlisted'] },
+      moderationStatus: 'approved',
+    },
     { $inc: { views: 1 } },
     { new: true }
   ).lean();
@@ -185,11 +189,14 @@ const addComment = async (userId, videoId, text) => {
   if (!mongoose.Types.ObjectId.isValid(videoId)) {
     throw new ApiError(400, 'Invalid video ID');
   }
-  if (!(await canAccessVideo(videoId, userId))) throw new ApiError(404, 'Video not found');
-
-  const trimmed = (text || '').trim();
+  if (typeof text !== 'string') {
+    throw new ApiError(400, 'Comment text is required');
+  }
+  const trimmed = text.trim();
   if (!trimmed) throw new ApiError(400, 'Comment text is required');
   if (trimmed.length > 1000) throw new ApiError(400, 'Comment text exceeds 1000 characters');
+
+  if (!(await canAccessVideo(videoId, userId))) throw new ApiError(404, 'Video not found');
 
   const comment = await Comment.create({
     video: videoId,
@@ -223,12 +230,20 @@ const getComments = async (videoId, userId) => {
     .lean();
 };
 
-const deleteComment = async (userId, commentId) => {
+const deleteComment = async (userId, commentId, videoId) => {
   if (!mongoose.Types.ObjectId.isValid(commentId)) {
     throw new ApiError(400, 'Invalid comment ID');
   }
+  if (videoId !== undefined && !mongoose.Types.ObjectId.isValid(videoId)) {
+    throw new ApiError(400, 'Invalid video ID');
+  }
 
-  const comment = await Comment.findOneAndDelete({ _id: commentId, user: userId });
+  const filter = {
+    _id: commentId,
+    user: userId,
+    ...(videoId ? { video: videoId } : {}),
+  };
+  const comment = await Comment.findOneAndDelete(filter);
   if (!comment) throw new ApiError(404, 'Comment not found');
 };
 

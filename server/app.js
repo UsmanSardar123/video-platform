@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 
 const loggerMiddleware = require('./middleware/logger.middleware');
 const errorHandler = require('./middleware/error.middleware');
+const { authenticate } = require('./middleware/auth.middleware');
 const ApiError = require('./utils/apiError.util');
 const ApiResponse = require('./utils/apiResponse.util');
 const authRoutes = require('./routes/auth.routes');
@@ -19,6 +20,9 @@ const adminRoutes = require('./routes/admin.routes');
 
 const app = express();
 
+// Trust first proxy so rate-limiting uses real client IP behind reverse proxies
+app.set('trust proxy', 1);
+
 // Security HTTP headers
 app.use(helmet());
 
@@ -27,17 +31,19 @@ const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
   : ['http://localhost:8081', 'http://localhost:3000'];
 
+const hasWildcardOrigin = allowedOrigins.includes('*');
+
 app.use(
   cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g. mobile apps, curl, Postman, server-to-server)
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+      if (hasWildcardOrigin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
       return callback(new ApiError(403, `CORS policy: Origin ${origin} not allowed`));
     },
-    credentials: true,
+    credentials: !hasWildcardOrigin,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
@@ -47,7 +53,7 @@ app.use(
 if (process.env.NODE_ENV !== 'test') {
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 300,
     standardHeaders: true,
     legacyHeaders: false,
     message: {
@@ -91,6 +97,7 @@ app.use('/api/uploads', uploadRoutes);
 app.use('/api/external-videos', externalVideoRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.post('/api/reports', authenticate, adminRoutes.createReportHandler);
 app.use('/api/admin', adminRoutes);
 
 // Catch-all 404 handler for unknown routes

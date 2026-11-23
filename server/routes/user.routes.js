@@ -180,6 +180,70 @@ router.post('/me/change-email', authenticate, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+const DEFAULT_PREFERENCES = {
+  autoplay: true,
+  startMuted: false,
+  dataSaver: false,
+  notifySubscriptions: true,
+  notifyComments: true,
+  notifyNewVideos: true,
+  historyPaused: false,
+};
+const PREFERENCE_KEYS = Object.keys(DEFAULT_PREFERENCES);
+
+// GET /api/users/me/preferences — Fetch persisted user playback, notification, and privacy preferences
+router.get('/me/preferences', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id).select('preferences').lean();
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    const merged = { ...DEFAULT_PREFERENCES, ...(user.preferences || {}) };
+    return res.status(200).json({ success: true, data: merged });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PATCH /api/users/me/preferences — Update persisted user preferences
+router.patch('/me/preferences', authenticate, async (req, res, next) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const keys = Object.keys(body);
+    if (!keys.length) {
+      return res.status(400).json({ success: false, message: 'Provide at least one preference to update' });
+    }
+    const updates = {};
+    for (const key of keys) {
+      if (!PREFERENCE_KEYS.includes(key)) {
+        return res.status(400).json({ success: false, message: `Unsupported preference field: ${key}` });
+      }
+      if (typeof body[key] !== 'boolean') {
+        return res.status(400).json({ success: false, message: `${key} must be a boolean` });
+      }
+      updates[`preferences.${key}`] = body[key];
+    }
+
+    const updated = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: updates },
+      { new: true }
+    ).select('preferences').lean();
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Preferences updated successfully',
+      data: { ...DEFAULT_PREFERENCES, ...(updated.preferences || {}) },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.delete('/me', authenticate, validate(deleteAccountSchema), async (req, res, next) => {
   try {
     await deleteAccount(req.user.id, req.body.password);
@@ -331,6 +395,9 @@ router.delete('/:id/reviews/:reviewId', authenticate, async (req, res, next) => 
     const { id, reviewId } = req.params;
     const reviewerId = req.user?.id || req.user?._id;
 
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid creator ID' });
+    }
     if (!mongoose.Types.ObjectId.isValid(reviewId)) {
       return res.status(400).json({ success: false, message: 'Invalid review ID' });
     }

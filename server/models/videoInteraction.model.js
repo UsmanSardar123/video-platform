@@ -38,6 +38,7 @@ videoInteractionSchema.index({ user: 1, video: 1 }, { unique: true });
 videoInteractionSchema.index({ user: 1, watchLater: 1 });
 videoInteractionSchema.index({ user: 1, liked: 1 });
 videoInteractionSchema.index({ user: 1, watchedAt: -1 });
+videoInteractionSchema.index({ video: 1, liked: 1 });
 
 module.exports =
   mongoose.models.VideoInteraction ||

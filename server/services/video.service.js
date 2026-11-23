@@ -1,4 +1,9 @@
+const mongoose = require('mongoose');
 const Video = require('../models/video.model');
+const Comment = require('../models/comment.model');
+const VideoInteraction = require('../models/videoInteraction.model');
+const Notification = require('../models/notification.model');
+const Report = require('../models/report.model');
 const ApiError = require('../utils/apiError.util');
 const { verifyUploadedAsset, deleteVideoAssets } = require('./cloudinary.service');
 const { notifyNewVideo } = require('./notificationEvents.service');
@@ -23,7 +28,13 @@ const listPublicVideos = async ({ page, limit, category, creator }) => {
       filter.category = new RegExp(`^${category.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
     }
   }
-  if (typeof creator === 'string' && creator.trim()) filter.creator = creator.trim();
+  if (typeof creator === 'string' && creator.trim()) {
+    const cleanCreator = creator.trim();
+    if (!mongoose.Types.ObjectId.isValid(cleanCreator)) {
+      throw new ApiError(400, 'Invalid creator ID');
+    }
+    filter.creator = cleanCreator;
+  }
 
   const [videos, total] = await Promise.all([
     Video.find(filter)
@@ -84,6 +95,14 @@ const deleteVideo = async (userId, videoId) => {
   if (!video || video.creator.toString() !== userId) throw new ApiError(404, 'Video not found');
   if (video.cloudinaryPublicId) await deleteVideoAssets([video.cloudinaryPublicId]);
   await Video.deleteOne({ _id: video._id, creator: userId });
+
+  // Best-effort cleanup of dependent records so deleted videos leave no orphans.
+  await Promise.allSettled([
+    Comment.deleteMany({ video: video._id }),
+    VideoInteraction.deleteMany({ video: video._id }),
+    Notification.deleteMany({ video: video._id }),
+    Report.deleteMany({ targetType: 'video', targetId: video._id }),
+  ]);
 };
 
 module.exports = { listPublicVideos, completeUpload, getMyVideos, deleteVideo };

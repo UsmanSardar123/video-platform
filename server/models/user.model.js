@@ -53,6 +53,15 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    preferences: {
+      autoplay: { type: Boolean, default: true },
+      startMuted: { type: Boolean, default: false },
+      dataSaver: { type: Boolean, default: false },
+      notifySubscriptions: { type: Boolean, default: true },
+      notifyComments: { type: Boolean, default: true },
+      notifyNewVideos: { type: Boolean, default: true },
+      historyPaused: { type: Boolean, default: false },
+    },
   },
   { timestamps: true }
 );

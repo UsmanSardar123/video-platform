@@ -88,7 +88,7 @@ const handleGetComments = async (req, res, next) => {
 
 const handleDeleteComment = async (req, res, next) => {
   try {
-    await interactionService.deleteComment(req.user.id, req.params.commentId);
+    await interactionService.deleteComment(req.user.id, req.params.commentId, req.params.id);
     res.status(200).json({ success: true, message: 'Comment deleted' });
   } catch (error) { next(error); }
 };

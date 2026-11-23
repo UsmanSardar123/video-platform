@@ -6,7 +6,18 @@ jest.mock('../../models/video.model');
 jest.mock('../../models/user.model');
 jest.mock('../../models/comment.model');
 jest.mock('../../models/videoInteraction.model');
+jest.mock('../../models/notification.model', () => ({
+  deleteMany: jest.fn().mockResolvedValue({}),
+}));
+jest.mock('../../models/report.model', () => ({
+  deleteMany: jest.fn().mockResolvedValue({}),
+}));
 jest.mock('../../models/adminAuditLog.model', () => ({ create: jest.fn().mockResolvedValue([]) }));
+jest.mock('../../services/notificationEvents.service', () => ({
+  notifyNewVideo: jest.fn().mockResolvedValue(undefined),
+  notifyNewSubscriber: jest.fn().mockResolvedValue(undefined),
+  notifyNewComment: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('../../services/cloudinary.service', () => ({
   deleteVideoAssets: jest.fn().mockResolvedValue(true),
 }));

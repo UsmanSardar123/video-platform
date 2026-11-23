@@ -6,7 +6,16 @@ const adminAuditLogSchema = new mongoose.Schema(
     target: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     action: {
       type: String,
-      enum: ['user.role.changed', 'admin.videos.read', 'admin.reports.read'],
+      enum: [
+        'user.role.changed',
+        'admin.videos.read',
+        'admin.reports.read',
+        'video.approved',
+        'video.rejected',
+        'video.visibility.changed',
+        'video.deleted',
+        'report.updated',
+      ],
       required: true,
     },
     resourceType: { type: String, enum: ['user', 'video', 'report'], default: 'user' },
