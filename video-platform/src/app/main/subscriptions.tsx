@@ -15,18 +15,17 @@ import {
   StatusBar,
   Text,
   TextInput,
-  ThemeToggleButton,
   View,
 } from '@/components/theme-native';
+import { AppHeader, EmptyState } from '@/components/ui';
 import { VideoCard } from '@/components/video-card';
 import { VideoCardSkeleton } from '@/components/video-card-skeleton';
 import { Design } from '@/constants/design';
 import { useAuth } from '@/contexts/auth-context';
-import { useNotifications } from '@/contexts/notification-context';
 import { useSubscription } from '@/contexts/subscription-context';
 import { useThemeMode } from '@/contexts/theme-context';
 import { useToast } from '@/contexts/toast-context';
-import { fetchHistory } from '@/lib/video-service';
+import { fetchHistory, updateSubscriptionNotification } from '@/lib/video-service';
 
 type FeedFilter = 'all' | 'today' | 'unwatched';
 type NotificationBellMode = 'all' | 'personalized' | 'none';
@@ -35,7 +34,6 @@ export default function SubscriptionsScreen() {
   const { user } = useAuth();
   const { mode } = useThemeMode();
   const { showToast } = useToast();
-  const { unreadCount } = useNotifications();
   const {
     creators,
     feed,
@@ -102,20 +100,30 @@ export default function SubscriptionsScreen() {
     });
   }, [creators, searchQuery]);
 
-  const toggleChannelBell = (creatorId: string, name: string) => {
-    setNotificationPrefs((prev) => {
-      const current = prev[creatorId] || 'all';
-      const next: NotificationBellMode =
-        current === 'all' ? 'personalized' : current === 'personalized' ? 'none' : 'all';
-      const label =
-        next === 'all'
-          ? `All notifications for ${name}`
-          : next === 'personalized'
-          ? `Personalized notifications for ${name}`
-          : `Notifications turned off for ${name}`;
+  const toggleChannelBell = async (creatorId: string, name: string) => {
+    const serverDefault =
+      creators.find((c) => c._id === creatorId)?.notificationLevel || 'all';
+    const current = notificationPrefs[creatorId] || serverDefault;
+    const next: NotificationBellMode =
+      current === 'all' ? 'personalized' : current === 'personalized' ? 'none' : 'all';
+
+    // Optimistic update
+    setNotificationPrefs((prev) => ({ ...prev, [creatorId]: next }));
+    const label =
+      next === 'all'
+        ? `All notifications for ${name}`
+        : next === 'personalized'
+        ? `Personalized notifications for ${name}`
+        : `Notifications turned off for ${name}`;
+
+    try {
+      await updateSubscriptionNotification(creatorId, next);
       showToast(label);
-      return { ...prev, [creatorId]: next };
-    });
+    } catch {
+      // Rollback on failure
+      setNotificationPrefs((prev) => ({ ...prev, [creatorId]: current }));
+      showToast('Could not save notification preference', 'error');
+    }
   };
 
   const handleUnsubscribeFromModal = async (creatorId: string, name: string) => {
@@ -134,28 +142,16 @@ export default function SubscriptionsScreen() {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: C.background }]} edges={['top']}>
         <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-        <View style={[styles.header, { borderBottomColor: C.border }]}>
-          <Text style={[styles.title, { color: C.text }]}>Subscriptions</Text>
-          <ThemeToggleButton />
-        </View>
+        <AppHeader title="Subscriptions" bordered />
         <View style={styles.authPromptContainer}>
-          <View style={[styles.iconBadge, { backgroundColor: C.surfaceRaised }]}>
-            <SymbolView
-              name={{ ios: 'play.square.stack.fill', android: 'subscriptions', web: 'subscriptions' }}
-              size={36}
-              tintColor={Design.color.accent}
-            />
-          </View>
-          <Text style={[styles.authTitle, { color: C.text }]}>{"Don't miss new videos"}</Text>
-          <Text style={[styles.authSubtitle, { color: C.secondary }]}>
-            Sign in to subscribe to your favorite channels and see their latest uploads right here.
-          </Text>
-          <Pressable
-            style={[styles.signInBtn, { backgroundColor: Design.color.accent }]}
-            onPress={() => router.push('/main/profile')}
-          >
-            <Text style={styles.signInBtnText}>Sign In</Text>
-          </Pressable>
+          <EmptyState
+            icon={{ ios: 'play.square.stack.fill', android: 'subscriptions', web: 'subscriptions' }}
+            accentIcon
+            title="Don't miss new videos"
+            description="Sign in to subscribe to your favorite creators and see their latest uploads right here."
+            actionLabel="Sign In"
+            onAction={() => router.push('/auth')}
+          />
         </View>
       </SafeAreaView>
     );
@@ -411,7 +407,7 @@ export default function SubscriptionsScreen() {
         {creators.length === 0 ? (
           <Pressable
             style={[styles.exploreBtn, { backgroundColor: Design.color.accent }]}
-            onPress={() => router.push('/main/explore')}
+            onPress={() => router.push('/explore')}
           >
             <Text style={styles.exploreBtnText}>Discover Creators</Text>
           </Pressable>
@@ -430,54 +426,7 @@ export default function SubscriptionsScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: C.background }]} edges={['top']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-
-      {/* Top Header */}
-      <View style={[styles.header, { borderBottomColor: C.border }]}>
-        <View style={styles.headerTitleGroup}>
-          <SymbolView
-            name={{ ios: 'play.square.stack.fill', android: 'subscriptions', web: 'subscriptions' }}
-            size={22}
-            tintColor={Design.color.accent}
-          />
-          <Text style={[styles.title, { color: C.text }]}>Subscriptions</Text>
-        </View>
-        <View style={styles.headerRight}>
-          <Pressable
-            hitSlop={8}
-            onPress={() => router.push('/notifications')}
-            style={styles.headerIconBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Notifications"
-          >
-            <SymbolView
-              name={{ ios: 'bell.fill', android: 'notifications', web: 'notifications' }}
-              size={20}
-              tintColor={C.text}
-            />
-            {unreadCount > 0 ? (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </Text>
-              </View>
-            ) : null}
-          </Pressable>
-          <Pressable
-            hitSlop={8}
-            onPress={() => router.push('/main/explore')}
-            style={styles.headerIconBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Search"
-          >
-            <SymbolView
-              name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }}
-              size={20}
-              tintColor={C.text}
-            />
-          </Pressable>
-          <ThemeToggleButton />
-        </View>
-      </View>
+      <AppHeader title="Subscriptions" bordered />
 
       {/* Feed List */}
       {loading && !refreshing ? (
@@ -569,7 +518,7 @@ export default function SubscriptionsScreen() {
               }
               renderItem={({ item }) => {
                 const initials = (item.fullName || item.username || 'C').charAt(0).toUpperCase();
-                const bellState = notificationPrefs[item._id] || 'all';
+                const bellState = notificationPrefs[item._id] || item.notificationLevel || 'all';
                 return (
                   <View style={[styles.manageRow, { borderBottomColor: C.border }]}>
                     <Pressable

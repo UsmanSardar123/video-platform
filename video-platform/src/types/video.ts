@@ -43,6 +43,7 @@ export type CreatorProfile = {
   subscriberCount: number;
   videoCount: number;
   isSubscribed?: boolean;
+  notificationLevel?: 'all' | 'personalized' | 'none';
 };
 
 export type CreatorReview = {

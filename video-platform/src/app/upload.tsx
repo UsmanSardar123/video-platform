@@ -24,13 +24,13 @@ export default function UploadScreen() {
   const { mode } = useThemeMode();
   const isDark = mode === 'dark';
   const C = isDark ? Design.color : Design.light;
-  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
+  const { returnTo, mode: initialMode } = useLocalSearchParams<{ returnTo?: string; mode?: string }>();
   const { showToast } = useToast();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<string>('Other');
   const [visibility, setVisibility] = useState<'public' | 'private' | 'unlisted'>('public');
-  const [externalMode, setExternalMode] = useState(false);
+  const [externalMode, setExternalMode] = useState(initialMode === 'external');
   const [externalUrl, setExternalUrl] = useState('');
   const [video, setVideo] = useState<SelectedVideo | null>(null);
   const [pendingAsset, setPendingAsset] = useState<UploadedAsset | null>(null);

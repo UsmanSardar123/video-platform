@@ -84,6 +84,7 @@ export default function WatchScreen() {
   const [related, setRelated] = useState<VideoRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [retryTick, setRetryTick] = useState(0);
 
   const {
     isSubscribed,
@@ -281,7 +282,7 @@ export default function WatchScreen() {
       player.pause();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, retryTick]);
 
   // Video player source handling (uses replaceAsync on supported platforms to avoid synchronous iOS main-thread stalls)
   useEffect(() => {
@@ -333,6 +334,7 @@ export default function WatchScreen() {
       showSignInModal('like this video');
       return;
     }
+    const previous = interaction;
     const nextAction = interaction.liked ? 'none' : 'like';
     // Optimistic update
     setInteraction((prev) => ({
@@ -350,6 +352,7 @@ export default function WatchScreen() {
         likeCount: res.likeCount,
       }));
     } catch {
+      setInteraction(previous);
       showToast('Could not update like status', 'error');
     }
   };
@@ -360,6 +363,7 @@ export default function WatchScreen() {
       showSignInModal('rate this video');
       return;
     }
+    const previous = interaction;
     const nextAction = interaction.disliked ? 'none' : 'dislike';
     // Optimistic update
     setInteraction((prev) => ({
@@ -377,6 +381,7 @@ export default function WatchScreen() {
         likeCount: res.likeCount,
       }));
     } catch {
+      setInteraction(previous);
       showToast('Could not update dislike status', 'error');
     }
   };
@@ -387,12 +392,14 @@ export default function WatchScreen() {
       showSignInModal('save this video to Watch Later');
       return;
     }
+    const previous = interaction;
     const nextState = !interaction.watchLater;
     setInteraction((prev) => ({ ...prev, watchLater: nextState }));
-    showToast(nextState ? 'Saved to Watch Later' : 'Removed from Watch Later');
     try {
       await setWatchLater(video._id, nextState);
+      showToast(nextState ? 'Saved to Watch Later' : 'Removed from Watch Later');
     } catch {
+      setInteraction(previous);
       showToast('Could not update Watch Later', 'error');
     }
   };
@@ -486,7 +493,7 @@ export default function WatchScreen() {
         <Text style={[styles.brandText, { color: C.text }]}>STREANUB</Text>
         <Pressable
           hitSlop={10}
-          onPress={() => router.push('/main/explore')}
+          onPress={() => router.push('/explore')}
           style={styles.searchButton}
           accessibilityLabel="Search"
         >
@@ -517,7 +524,7 @@ export default function WatchScreen() {
             <Text style={[styles.errorText, { color: Design.color.danger }]}>{error}</Text>
             <Pressable
               style={[styles.retryBtn, { backgroundColor: Design.color.accent }]}
-              onPress={() => router.replace({ pathname: '/watch', params: { id } })}
+              onPress={() => setRetryTick((t) => t + 1)}
             >
               <Text style={styles.retryBtnText}>Retry</Text>
             </Pressable>

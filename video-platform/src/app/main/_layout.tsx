@@ -1,154 +1,176 @@
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Tabs, usePathname } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { router, Tabs, usePathname } from 'expo-router';
-import { useEffect, useRef } from 'react';
-import {
-  Keyboard,
-  PanResponder,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { Avatar, CreateSheet } from '@/components/ui';
 import { Design } from '@/constants/design';
-import { useThemeMode } from '@/contexts/theme-context';
+import { useAuth } from '@/contexts/auth-context';
 import { useNotifications } from '@/contexts/notification-context';
-import {
-  calculateNextTab,
-  getTabIndexFromPathname,
-  isInsideHorizontalScroll,
-  shouldSwipeTrigger,
-} from '@/lib/swipe-navigation';
+import { useDesignTheme } from '@/contexts/theme-context';
 
-const icons = {
-  home: { ios: 'house.fill', android: 'home', web: 'home' },
-  subscriptions: { ios: 'play.square.stack.fill', android: 'subscriptions', web: 'subscriptions' },
-  explore: { ios: 'safari.fill', android: 'explore', web: 'explore' },
-  profile: { ios: 'person.crop.circle.fill', android: 'account_circle', web: 'account_circle' },
+const ICONS = {
+  home: {
+    active: { ios: 'house.fill', android: 'home', web: 'home' },
+    inactive: { ios: 'house', android: 'home', web: 'home' },
+  },
+  shorts: {
+    active: { ios: 'bolt.fill', android: 'bolt', web: 'bolt' },
+    inactive: { ios: 'bolt', android: 'bolt', web: 'bolt' },
+  },
+  subscriptions: {
+    active: { ios: 'play.square.stack.fill', android: 'subscriptions', web: 'subscriptions' },
+    inactive: { ios: 'play.square.stack', android: 'subscriptions', web: 'subscriptions' },
+  },
+  profile: {
+    active: { ios: 'person.crop.circle.fill', android: 'account_circle', web: 'account_circle' },
+    inactive: { ios: 'person.crop.circle', android: 'account_circle', web: 'account_circle' },
+  },
 } as const;
 
-let activeSwipeMoveHandler: ((evt: any, gestureState: any) => boolean) | null = null;
-let activeSwipeReleaseHandler: ((evt: any, gestureState: any) => void) | null = null;
-
-const swipePanResponder = PanResponder.create({
-  onStartShouldSetPanResponder: () => false,
-  onStartShouldSetPanResponderCapture: () => false,
-  onMoveShouldSetPanResponderCapture: () => false,
-  onMoveShouldSetPanResponder: (evt, gestureState) => {
-    return activeSwipeMoveHandler ? activeSwipeMoveHandler(evt, gestureState) : false;
-  },
-  onPanResponderGrant: () => {},
-  onPanResponderRelease: (evt, gestureState) => {
-    if (activeSwipeReleaseHandler) {
-      activeSwipeReleaseHandler(evt, gestureState);
-    }
-  },
-  onPanResponderTerminate: () => {},
-});
-
 export default function MainLayout() {
-  const { mode } = useThemeMode();
-  const colors = mode === 'dark' ? Design.color : Design.light;
+  const { colors, isDark } = useDesignTheme();
+  const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const { refreshUnreadCount } = useNotifications();
+  const [createSheetOpen, setCreateSheetOpen] = useState(false);
 
   useEffect(() => {
     void refreshUnreadCount();
   }, [pathname, refreshUnreadCount]);
 
-  const isKeyboardOpenRef = useRef(false);
-  const isNavigatingRef = useRef(false);
-  const lastNavTimeRef = useRef(0);
-
-  useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', () => {
-      isKeyboardOpenRef.current = true;
-    });
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
-      isKeyboardOpenRef.current = false;
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-
-  useEffect(() => {
-    activeSwipeMoveHandler = (evt, gestureState) => {
-      const now = Date.now();
-      if (now - lastNavTimeRef.current < 350) return false;
-
-      return shouldSwipeTrigger({
-        pathname,
-        dx: gestureState.dx,
-        dy: gestureState.dy,
-        isKeyboardOpen: isKeyboardOpenRef.current,
-        isInsideHorizontalElement: isInsideHorizontalScroll(evt.nativeEvent?.target),
-      });
-    };
-
-    activeSwipeReleaseHandler = (_evt, gestureState) => {
-      if (isNavigatingRef.current) return;
-
-      const now = Date.now();
-      if (now - lastNavTimeRef.current < 350) return;
-
-      const currentIndex = getTabIndexFromPathname(pathname);
-      if (currentIndex < 0) return;
-
-      const nextRoute = calculateNextTab(currentIndex, gestureState.dx, gestureState.vx);
-      if (nextRoute) {
-        isNavigatingRef.current = true;
-        lastNavTimeRef.current = now;
-        router.navigate(nextRoute as any);
-        setTimeout(() => {
-          isNavigatingRef.current = false;
-        }, 350);
-      }
-    };
-
-    return () => {
-      activeSwipeMoveHandler = null;
-      activeSwipeReleaseHandler = null;
-    };
-  }, [pathname]);
+  const bottomInset = Math.max(insets.bottom, 6);
 
   return (
-    <View style={styles.container} {...swipePanResponder.panHandlers}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Tabs
         backBehavior="history"
         screenOptions={{
           headerShown: false,
           animation: 'shift',
-          tabBarActiveTintColor: colors.accent,
+          tabBarActiveTintColor: colors.text,
           tabBarInactiveTintColor: colors.muted,
           tabBarHideOnKeyboard: true,
           tabBarLabelStyle: styles.label,
           tabBarItemStyle: styles.item,
-          tabBarStyle: [styles.bar, {
-            backgroundColor: colors.surface,
-            borderTopColor: colors.border,
-          }],
-        }}>
-        <Tabs.Screen name="index" options={{
-          title: 'Home',
-          tabBarAccessibilityLabel: 'Home tab',
-          tabBarIcon: ({ color, size }) => <SymbolView name={icons.home} tintColor={color} size={size} />,
-        }} />
-        <Tabs.Screen name="subscriptions" options={{
-          title: 'Subscriptions',
-          tabBarAccessibilityLabel: 'Subscriptions tab',
-          tabBarIcon: ({ color, size }) => <SymbolView name={icons.subscriptions} tintColor={color} size={size} />,
-        }} />
-        <Tabs.Screen name="explore" options={{
-          title: 'Explore',
-          tabBarAccessibilityLabel: 'Explore videos tab',
-          tabBarIcon: ({ color, size }) => <SymbolView name={icons.explore} tintColor={color} size={size} />,
-        }} />
-        <Tabs.Screen name="profile" options={{
-          title: 'You',
-          tabBarAccessibilityLabel: 'You tab',
-          tabBarIcon: ({ color, size }) => <SymbolView name={icons.profile} tintColor={color} size={size} />,
-        }} />
+          tabBarStyle: [
+            styles.bar,
+            {
+              backgroundColor: colors.surface,
+              borderTopColor: colors.border,
+              height: Design.touch.tabBarHeight + bottomInset,
+              paddingBottom: bottomInset,
+            },
+          ],
+        }}
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'Home',
+            tabBarAccessibilityLabel: 'Home tab',
+            tabBarIcon: ({ color, focused }) => (
+              <SymbolView
+                name={focused ? ICONS.home.active : ICONS.home.inactive}
+                tintColor={focused ? colors.accent : color}
+                size={23}
+              />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="shorts"
+          options={{
+            title: 'Shorts',
+            tabBarAccessibilityLabel: 'Shorts tab',
+            tabBarIcon: ({ color, focused }) => (
+              <SymbolView
+                name={focused ? ICONS.shorts.active : ICONS.shorts.inactive}
+                tintColor={focused ? colors.accent : color}
+                size={23}
+              />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="create"
+          options={{
+            title: '',
+            tabBarLabel: () => null,
+            tabBarButton: ({ accessibilityState }) => (
+              <View style={styles.createSlot}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Create video or Short"
+                  accessibilityState={accessibilityState}
+                  onPress={() => setCreateSheetOpen(true)}
+                  style={({ pressed }) => [
+                    styles.createBtn,
+                    {
+                      backgroundColor: isDark ? colors.surfaceRaised : colors.surfaceElevated,
+                      borderColor: colors.border,
+                    },
+                    pressed && styles.createBtnPressed,
+                  ]}
+                >
+                  <SymbolView
+                    name={{ ios: 'plus', android: 'add', web: 'add' }}
+                    tintColor={colors.text}
+                    size={24}
+                  />
+                </Pressable>
+              </View>
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="subscriptions"
+          options={{
+            title: 'Subscriptions',
+            tabBarAccessibilityLabel: 'Subscriptions tab',
+            tabBarIcon: ({ color, focused }) => (
+              <SymbolView
+                name={focused ? ICONS.subscriptions.active : ICONS.subscriptions.inactive}
+                tintColor={focused ? colors.accent : color}
+                size={23}
+              />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: 'You',
+            tabBarAccessibilityLabel: 'You tab',
+            tabBarIcon: ({ color, focused }) =>
+              user ? (
+                <Avatar
+                  uri={user.avatar}
+                  name={user.fullName || user.username}
+                  size={24}
+                  borderColor={focused ? colors.accent : colors.border}
+                />
+              ) : (
+                <SymbolView
+                  name={focused ? ICONS.profile.active : ICONS.profile.inactive}
+                  tintColor={focused ? colors.accent : color}
+                  size={23}
+                />
+              ),
+          }}
+        />
+
+        {/* Hidden routes preserved for deep links and top-bar Search navigation */}
+        <Tabs.Screen name="explore" options={{ href: null }} />
         <Tabs.Screen name="edit-profile" options={{ href: null }} />
       </Tabs>
+
+      <CreateSheet visible={createSheetOpen} onClose={() => setCreateSheetOpen(false)} />
     </View>
   );
 }
@@ -159,13 +181,36 @@ const styles = StyleSheet.create({
   },
   bar: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 5,
+    paddingTop: 6,
     elevation: 10,
     shadowColor: '#000',
     shadowOpacity: 0.12,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: -4 },
   },
-  label: { fontSize: 11, fontWeight: '700' },
-  item: { minHeight: 54 },
+  label: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  item: {
+    paddingVertical: 2,
+  },
+  createSlot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createBtnPressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.94 }],
+  },
 });

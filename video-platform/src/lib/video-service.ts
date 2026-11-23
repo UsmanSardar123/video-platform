@@ -224,6 +224,69 @@ export async function deleteCreatorReview(
   return res.data;
 }
 
+export type SubscriptionNotificationLevel = 'all' | 'personalized' | 'none';
+
+export async function updateSubscriptionNotification(
+  creatorId: string,
+  notificationLevel: SubscriptionNotificationLevel
+): Promise<{ creatorId: string; notificationLevel: SubscriptionNotificationLevel }> {
+  const res = await apiRequest<{
+    creatorId: string;
+    notificationLevel: SubscriptionNotificationLevel;
+  }>(`/api/subscriptions/${encodeURIComponent(creatorId)}/notifications`, {
+    method: 'PATCH',
+    body: JSON.stringify({ notificationLevel }),
+  });
+  return res.data;
+}
+
+export type UserPreferencesPayload = {
+  autoplay: boolean;
+  startMuted: boolean;
+  dataSaver: boolean;
+  notifySubscriptions: boolean;
+  notifyComments: boolean;
+  notifyNewVideos: boolean;
+  historyPaused: boolean;
+};
+
+export async function fetchUserPreferences(): Promise<UserPreferencesPayload> {
+  const res = await apiRequest<UserPreferencesPayload>('/api/users/me/preferences');
+  return res.data;
+}
+
+export async function updateUserPreferences(
+  partial: Partial<UserPreferencesPayload>
+): Promise<UserPreferencesPayload> {
+  const res = await apiRequest<UserPreferencesPayload>('/api/users/me/preferences', {
+    method: 'PATCH',
+    body: JSON.stringify(partial),
+  });
+  return res.data;
+}
+
+export type ReportReason =
+  | 'inappropriate_content'
+  | 'harassment'
+  | 'copyright'
+  | 'spam'
+  | 'misinformation'
+  | 'violence'
+  | 'other';
+
+export async function reportContent(input: {
+  targetType: 'video' | 'user' | 'comment';
+  targetId: string;
+  reason: ReportReason;
+  details?: string;
+}): Promise<{ id: string; status: string }> {
+  const res = await apiRequest<{ id: string; status: string }>('/api/reports', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  return res.data;
+}
+
 export async function uploadAvatarImage(asset: {
   uri: string;
   fileName?: string | null;

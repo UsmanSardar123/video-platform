@@ -73,8 +73,8 @@ export function ThemeModeProvider({ children }: { children: ReactNode }) {
   // Persist preference and update system colorScheme
   useEffect(() => {
     if (!ready) return;
-    if (preference !== 'system') {
-      Appearance.setColorScheme(mode);
+    if (Platform.OS !== 'web' && typeof Appearance.setColorScheme === 'function') {
+      Appearance.setColorScheme(preference === 'system' ? 'unspecified' : mode);
     }
     void writeTheme(preference);
   }, [mode, preference, ready]);
@@ -82,6 +82,9 @@ export function ThemeModeProvider({ children }: { children: ReactNode }) {
   const setPreference = useCallback((newPref: ThemePreference) => {
     setPreferenceState(newPref);
     if (newPref === 'system') {
+      if (Platform.OS !== 'web' && typeof Appearance.setColorScheme === 'function') {
+        Appearance.setColorScheme('unspecified');
+      }
       setMode(Appearance.getColorScheme() === 'light' ? 'light' : 'dark');
     } else {
       setMode(newPref);
@@ -108,6 +111,13 @@ export function useThemeMode() {
   const context = useContext(ThemeContext);
   if (!context) throw new Error('useThemeMode must be used within ThemeModeProvider');
   return context;
+}
+
+export function useDesignTheme() {
+  const ctx = useThemeMode();
+  const isDark = ctx.mode === 'dark';
+  const colors = isDark ? Design.color : Design.light;
+  return { ...ctx, isDark, colors };
 }
 
 const lightColors: Record<string, string> = {

@@ -5,17 +5,9 @@ import React, {
   useEffect,
   useState,
 } from 'react';
-import { Modal, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
-import {
-  Pressable,
-  Text,
-  View,
-} from '@/components/theme-native';
-import { Design } from '@/constants/design';
+import { ConfirmDialog } from '@/components/ui';
 import { useAuth } from '@/contexts/auth-context';
-import { useThemeMode } from '@/contexts/theme-context';
 import { useToast } from '@/contexts/toast-context';
 import {
   fetchSubscriptionStatus,
@@ -48,10 +40,7 @@ const SubscriptionContext = createContext<SubscriptionContextType | undefined>(u
 
 export function SubscriptionProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const { mode } = useThemeMode();
   const { showToast } = useToast();
-  const isDark = mode === 'dark';
-  const C = isDark ? Design.color : Design.light;
 
   const [subscribedMap, setSubscribedMap] = useState<Record<string, boolean>>({});
   const [subscriberCountMap, setSubscriberCountMap] = useState<Record<string, number>>({});
@@ -387,136 +376,37 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     >
       {children}
 
-      {/* --- UNPUBLISH / UNSUBSCRIBE CONFIRMATION SHEET MODAL --- */}
-      <Modal
+      <ConfirmDialog
         visible={Boolean(unsubModalTarget)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setUnsubModalTarget(null)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setUnsubModalTarget(null)}
-        >
-          <Pressable
-            style={[
-              styles.sheetContent,
-              {
-                backgroundColor: C.surface,
-                borderColor: C.border,
-              },
-            ]}
-            onPress={(e) => e?.stopPropagation?.()}
-          >
-            <View style={styles.sheetHandle} />
+        onClose={() => setUnsubModalTarget(null)}
+        onConfirm={() => {
+          if (unsubModalTarget) {
+            const { id, name } = unsubModalTarget;
+            setUnsubModalTarget(null);
+            void executeUnsubscribe(id, name);
+          }
+        }}
+        destructive
+        icon={{ ios: 'bell.slash.fill', android: 'notifications_off', web: 'notifications_off' }}
+        title={`Unsubscribe from ${unsubModalTarget?.name || 'this channel'}?`}
+        message="You will no longer receive new video uploads or updates from this creator in your Subscriptions feed."
+        confirmLabel="Unsubscribe"
+        cancelLabel="Cancel"
+      />
 
-            <View style={styles.sheetHeader}>
-              <View style={[styles.sheetIconCircle, { backgroundColor: isDark ? '#2a1a1c' : '#fee2e2' }]}>
-                <SymbolView
-                  name={{ ios: 'bell.slash.fill', android: 'notifications_off', web: 'notifications_off' }}
-                  size={26}
-                  tintColor={Design.color.danger}
-                />
-              </View>
-              <Text style={[styles.sheetTitle, { color: C.text }]}>
-                Unsubscribe from {unsubModalTarget?.name || 'this channel'}?
-              </Text>
-              <Text style={[styles.sheetSubtitle, { color: C.secondary }]}>
-                You will no longer receive new video uploads or updates from this creator in your Subscriptions feed.
-              </Text>
-            </View>
-
-            <View style={styles.sheetActions}>
-              <Pressable
-                style={[
-                  styles.sheetBtnSecondary,
-                  { backgroundColor: C.surfaceRaised, borderColor: C.border },
-                ]}
-                onPress={() => setUnsubModalTarget(null)}
-              >
-                <Text style={[styles.sheetBtnSecondaryText, { color: C.text }]}>Cancel</Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.sheetBtnPrimary, { backgroundColor: Design.color.danger }]}
-                onPress={() => {
-                  if (unsubModalTarget) {
-                    const { id, name } = unsubModalTarget;
-                    setUnsubModalTarget(null);
-                    void executeUnsubscribe(id, name);
-                  }
-                }}
-              >
-                <Text style={styles.sheetBtnPrimaryText}>Unsubscribe</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* --- SIGN-IN PROMPT SHEET FOR LOGGED-OUT USERS --- */}
-      <Modal
+      <ConfirmDialog
         visible={signInModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSignInModalVisible(false)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setSignInModalVisible(false)}
-        >
-          <Pressable
-            style={[
-              styles.sheetContent,
-              {
-                backgroundColor: C.surface,
-                borderColor: C.border,
-              },
-            ]}
-            onPress={(e) => e?.stopPropagation?.()}
-          >
-            <View style={styles.sheetHandle} />
-
-            <View style={styles.sheetHeader}>
-              <View style={[styles.sheetIconCircle, { backgroundColor: isDark ? Design.color.accentSurface : '#fee2e2' }]}>
-                <SymbolView
-                  name={{ ios: 'person.crop.circle.badge.plus', android: 'account_circle', web: 'account_circle' }}
-                  size={28}
-                  tintColor={Design.color.accent}
-                />
-              </View>
-              <Text style={[styles.sheetTitle, { color: C.text }]}>
-                Want to {signInModalAction}?
-              </Text>
-              <Text style={[styles.sheetSubtitle, { color: C.secondary }]}>
-                Sign in to subscribe to creators, like videos, save to Watch Later, and build your personalized video library.
-              </Text>
-            </View>
-
-            <View style={styles.sheetActions}>
-              <Pressable
-                style={[
-                  styles.sheetBtnSecondary,
-                  { backgroundColor: C.surfaceRaised, borderColor: C.border },
-                ]}
-                onPress={() => setSignInModalVisible(false)}
-              >
-                <Text style={[styles.sheetBtnSecondaryText, { color: C.text }]}>Not Now</Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.sheetBtnPrimary, { backgroundColor: Design.color.accent }]}
-                onPress={() => {
-                  setSignInModalVisible(false);
-                  router.push('/auth');
-                }}
-              >
-                <Text style={styles.sheetBtnPrimaryText}>Sign In</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        onClose={() => setSignInModalVisible(false)}
+        onConfirm={() => {
+          setSignInModalVisible(false);
+          router.push('/auth');
+        }}
+        icon={{ ios: 'person.crop.circle.badge.plus', android: 'account_circle', web: 'account_circle' }}
+        title={`Want to ${signInModalAction}?`}
+        message="Sign in to subscribe to creators, like videos, save to Watch Later, and build your personalized video library."
+        confirmLabel="Sign In"
+        cancelLabel="Not Now"
+      />
     </SubscriptionContext.Provider>
   );
 }
@@ -528,89 +418,3 @@ export function useSubscription() {
   }
   return context;
 }
-
-const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    padding: 12,
-    paddingBottom: 24,
-  },
-  sheetContent: {
-    width: '100%',
-    maxWidth: 440,
-    borderRadius: 22,
-    borderWidth: 1,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    elevation: 10,
-  },
-  sheetHandle: {
-    width: 38,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(150,150,150,0.3)',
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  sheetHeader: {
-    alignItems: 'center',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  sheetIconCircle: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  sheetTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginBottom: 8,
-    letterSpacing: -0.3,
-  },
-  sheetSubtitle: {
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: 'center',
-    paddingHorizontal: 8,
-  },
-  sheetActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 6,
-  },
-  sheetBtnSecondary: {
-    flex: 1,
-    minHeight: 46,
-    borderRadius: Design.radius.sm,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetBtnSecondaryText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  sheetBtnPrimary: {
-    flex: 1,
-    minHeight: 46,
-    borderRadius: Design.radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetBtnPrimaryText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-});

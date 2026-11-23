@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Platform } from 'react-native';
+import { Image } from 'expo-image';
 import * as SecureStore from 'expo-secure-store';
-import { clearHistory } from '@/lib/video-service';
+import { clearHistory, fetchUserPreferences, updateUserPreferences } from '@/lib/video-service';
 import { useAuth } from '@/contexts/auth-context';
 
 export type AppSettings = {
@@ -74,13 +75,28 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    void readSettings(userId).then((saved) => {
+    const load = async () => {
+      const localSaved = await readSettings(userId);
       if (mounted) {
-        setSettings(saved);
+        setSettings(localSaved);
         setSettingsOwnerId(userId);
         setLoading(false);
       }
-    });
+      if (userId) {
+        try {
+          const remote = await fetchUserPreferences();
+          if (mounted) {
+            const merged = { ...DEFAULT_SETTINGS, ...remote };
+            setSettings(merged);
+            setSettingsOwnerId(userId);
+            void writeSettings(userId, merged);
+          }
+        } catch {
+          // Offline / unauthenticated fallback keeps local preferences.
+        }
+      }
+    };
+    void load();
     return () => { mounted = false; };
   }, [userId]);
 
@@ -94,10 +110,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       return updated;
     });
     setSettingsOwnerId(userId);
+    if (userId) {
+      try {
+        const synced = await updateUserPreferences(partial);
+        setSettings((current) => {
+          const merged = { ...current, ...synced };
+          void writeSettings(userId, merged);
+          return merged;
+        });
+      } catch {
+        // Local update remains applied when offline.
+      }
+    }
   }, [settingsOwnerId, userId]);
 
   const clearLocalCache = useCallback(async () => {
-    // Safely clear transient cache keys without affecting user tokens or uploads
+    // Safely clear image & transient device caches without affecting user tokens or uploads
     try {
       if (Platform.OS === 'web') {
         const keysToRemove: string[] = [];
@@ -108,6 +136,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           }
         }
         keysToRemove.forEach((k) => globalThis.localStorage?.removeItem(k));
+      } else {
+        await Promise.allSettled([
+          typeof Image.clearMemoryCache === 'function' ? Image.clearMemoryCache() : Promise.resolve(),
+          typeof Image.clearDiskCache === 'function' ? Image.clearDiskCache() : Promise.resolve(),
+        ]);
       }
     } catch {
       // Non-blocking

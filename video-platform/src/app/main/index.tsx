@@ -1,25 +1,25 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, RefreshControl, StyleSheet } from 'react-native';
-import { SymbolView } from 'expo-symbols';
 import {
   ActivityIndicator,
+  FlatList,
   Pressable,
-  SafeAreaView,
+  RefreshControl,
   StatusBar,
+  StyleSheet,
   Text,
-  ThemeToggleButton,
   View,
-} from '@/components/theme-native';
-import { apiRequest, type ApiEnvelope } from '@/lib/api';
-import { VideoSearchBar } from '@/components/video-search-bar';
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { AppHeader, EmptyState, ErrorState } from '@/components/ui';
 import { CategoryChipBar } from '@/components/category-chip-bar';
 import { VideoCard } from '@/components/video-card';
 import { VideoCardSkeleton } from '@/components/video-card-skeleton';
-import { Design } from '@/constants/design';
 import { FEED_CATEGORIES } from '@/constants/categories';
-import { useThemeMode } from '@/contexts/theme-context';
+import { useAuth } from '@/contexts/auth-context';
 import { useNotifications } from '@/contexts/notification-context';
+import { useDesignTheme } from '@/contexts/theme-context';
+import { apiRequest, type ApiEnvelope } from '@/lib/api';
 import { type VideoRecord } from '@/types/video';
 
 type FeedResponse = ApiEnvelope<VideoRecord[]> & {
@@ -27,41 +27,35 @@ type FeedResponse = ApiEnvelope<VideoRecord[]> & {
 };
 
 export default function HomeScreen() {
-  const { mode } = useThemeMode();
-  const isDark = mode === 'dark';
-  const C = isDark ? Design.color : Design.light;
-  const { unreadCount, refreshUnreadCount } = useNotifications();
+  const { colors, isDark } = useDesignTheme();
+  const { user } = useAuth();
+  const { refreshUnreadCount } = useNotifications();
 
   const [videos, setVideos] = useState<VideoRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
-  const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string>('All');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
   const abortControllerRef = useRef<AbortController | null>(null);
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const categoryRef = useRef(category);
-  const queryRef = useRef(query);
   const pageRef = useRef(page);
   const totalPagesRef = useRef(totalPages);
 
   useEffect(() => {
     categoryRef.current = category;
-    queryRef.current = query;
     pageRef.current = page;
     totalPagesRef.current = totalPages;
-  }, [category, query, page, totalPages]);
+  }, [category, page, totalPages]);
 
   const loadVideos = useCallback(
     async (
-      targetPage = 1,
-      pull = false,
-      targetCategory = categoryRef.current,
-      targetQuery = queryRef.current,
+      targetPage: number,
+      pull: boolean,
+      targetCategory: string,
       signal?: AbortSignal
     ) => {
       if (pull) setRefreshing(true);
@@ -69,16 +63,9 @@ export default function HomeScreen() {
       else setLoadingMore(true);
 
       try {
-        const term = targetQuery.trim();
-        let endpoint = '';
-
-        if (term) {
-          const catParam = targetCategory !== 'All' ? `&category=${encodeURIComponent(targetCategory)}` : '';
-          endpoint = `/api/search?q=${encodeURIComponent(term)}${catParam}&page=${targetPage}&limit=20`;
-        } else {
-          const catParam = targetCategory !== 'All' ? `category=${encodeURIComponent(targetCategory)}&` : '';
-          endpoint = `/api/videos?${catParam}page=${targetPage}&limit=20`;
-        }
+        const catParam =
+          targetCategory !== 'All' ? `category=${encodeURIComponent(targetCategory)}&` : '';
+        const endpoint = `/api/videos?${catParam}page=${targetPage}&limit=20`;
 
         const result = (await apiRequest<VideoRecord[]>(endpoint, { signal })) as FeedResponse;
 
@@ -117,7 +104,6 @@ export default function HomeScreen() {
     []
   );
 
-  // Single focus effect that cleanly loads feed on mount and refetches on tab focus
   useFocusEffect(
     useCallback(() => {
       void refreshUnreadCount();
@@ -125,7 +111,7 @@ export default function HomeScreen() {
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      void loadVideos(1, false, categoryRef.current, queryRef.current, controller.signal);
+      void loadVideos(1, false, categoryRef.current, controller.signal);
 
       return () => {
         controller.abort();
@@ -140,122 +126,41 @@ export default function HomeScreen() {
       abortControllerRef.current?.abort();
       const controller = new AbortController();
       abortControllerRef.current = controller;
-      void loadVideos(1, false, newCategory, queryRef.current, controller.signal);
-    },
-    [loadVideos]
-  );
-
-  const handleQueryChange = useCallback(
-    (newQuery: string) => {
-      setQuery(newQuery);
-      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-      searchDebounceRef.current = setTimeout(() => {
-        abortControllerRef.current?.abort();
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
-        setVideos([]);
-        void loadVideos(1, false, categoryRef.current, newQuery, controller.signal);
-      }, 300);
+      void loadVideos(1, false, newCategory, controller.signal);
     },
     [loadVideos]
   );
 
   const handleRefresh = useCallback(() => {
-    void loadVideos(1, true, categoryRef.current, queryRef.current);
+    void loadVideos(1, true, categoryRef.current);
   }, [loadVideos]);
 
   const handleLoadMore = useCallback(() => {
     if (loading || loadingMore || pageRef.current >= totalPagesRef.current) return;
-    const nextPage = pageRef.current + 1;
-    void loadVideos(nextPage, false, categoryRef.current, queryRef.current);
+    void loadVideos(pageRef.current + 1, false, categoryRef.current);
   }, [loading, loadingMore, loadVideos]);
 
   const openVideo = useCallback((id: string) => {
     router.push({ pathname: '/watch', params: { id } });
   }, []);
 
-  const clearFilters = useCallback(() => {
-    setQuery('');
-    handleCategorySelect('All');
-  }, [handleCategorySelect]);
-
   const renderHeader = useMemo(() => {
     return (
       <View style={styles.headerArea}>
-        {/* Top App Bar */}
-        <View style={styles.topBar}>
-          <View style={styles.brandContainer}>
-            <View style={styles.logoIcon}>
-              <SymbolView
-                name={{ ios: 'play.fill', android: 'play_arrow', web: 'play_arrow' }}
-                size={18}
-                tintColor="#ffffff"
-              />
-            </View>
-            <View style={styles.brandTextBlock}>
-              <Text style={[styles.brandTitle, { color: C.text }]}>Streanub</Text>
-              <Text style={[styles.brandSubtitle, { color: C.muted }]}>
-                Videos from the community
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.topActions}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
-              style={[
-                styles.uploadShortcut,
-                { backgroundColor: isDark ? Design.color.surfaceRaised : Design.light.surfaceRaised, borderColor: C.border },
-              ]}
-              onPress={() => router.push('/notifications')}
-            >
-              <SymbolView
-                name={{ ios: 'bell.fill', android: 'notifications', web: 'notifications' }}
-                size={18}
-                tintColor={Design.color.accent}
-              />
-              {unreadCount > 0 ? (
-                <View style={styles.bellBadge}>
-                  <Text style={styles.bellBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-                </View>
-              ) : null}
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Upload Video"
-              style={[
-                styles.uploadShortcut,
-                { backgroundColor: isDark ? Design.color.surfaceRaised : Design.light.surfaceRaised, borderColor: C.border },
-              ]}
-              onPress={() => router.push('/upload')}
-            >
-              <SymbolView
-                name={{ ios: 'plus', android: 'add', web: 'add' }}
-                size={18}
-                tintColor={Design.color.accent}
-              />
-            </Pressable>
-            <ThemeToggleButton />
-          </View>
-        </View>
-
-        {/* Search Bar */}
-        <VideoSearchBar value={query} onChangeText={handleQueryChange} />
-
-        {/* Category Chip Bar */}
         <CategoryChipBar
           categories={FEED_CATEGORIES}
           selectedCategory={category}
           onSelectCategory={handleCategorySelect}
         />
 
-        {/* Category indication badge when filtered */}
-        {category !== 'All' && (
+        {category !== 'All' ? (
           <View style={styles.filterBar}>
-            <Text style={[styles.filterBarText, { color: C.muted }]}>
-              Category: <Text style={{ color: C.text, fontWeight: '700' }}>{category}</Text>
-              {!loading && videos.length > 0 ? ` • ${videos.length} video${videos.length === 1 ? '' : 's'}` : ''}
+            <Text style={[styles.filterBarText, { color: colors.muted }]}>
+              Category:{' '}
+              <Text style={{ color: colors.text, fontWeight: '700' }}>{category}</Text>
+              {!loading && videos.length > 0
+                ? ` • ${videos.length} video${videos.length === 1 ? '' : 's'}`
+                : ''}
             </Text>
             <Pressable
               accessibilityRole="button"
@@ -263,13 +168,13 @@ export default function HomeScreen() {
               onPress={() => handleCategorySelect('All')}
               style={styles.clearFilterBtn}
             >
-              <Text style={[styles.clearFilterText, { color: Design.color.accent }]}>Show All</Text>
+              <Text style={[styles.clearFilterText, { color: colors.accent }]}>Show All</Text>
             </Pressable>
           </View>
-        )}
+        ) : null}
       </View>
     );
-  }, [C.border, C.muted, C.text, category, handleCategorySelect, handleQueryChange, isDark, loading, query, unreadCount, videos.length]);
+  }, [category, colors.accent, colors.muted, colors.text, handleCategorySelect, loading, videos.length]);
 
   const renderEmpty = useMemo(() => {
     if (loading) {
@@ -284,116 +189,43 @@ export default function HomeScreen() {
 
     if (error) {
       return (
-        <View style={[styles.stateContainer, isDark ? styles.cardDark : styles.cardLight]}>
-          <SymbolView
-            name={{ ios: 'exclamationmark.triangle', android: 'warning', web: 'warning' }}
-            size={36}
-            tintColor={Design.color.danger}
-          />
-          <Text style={[styles.stateTitle, { color: C.text }]}>Videos could not be loaded</Text>
-          <Text style={[styles.stateText, { color: C.muted }]}>{error}</Text>
-          <Pressable
-            style={[styles.actionBtn, { backgroundColor: C.surfaceRaised, borderColor: C.border }]}
-            onPress={() => loadVideos(1, false, categoryRef.current, queryRef.current)}
-          >
-            <Text style={[styles.actionBtnText, { color: C.text }]}>Try again</Text>
-          </Pressable>
-        </View>
+        <ErrorState
+          title="Videos could not be loaded"
+          message={error}
+          onRetry={() => void loadVideos(1, false, category)}
+        />
       );
     }
 
-    if (!loading && !error && videos.length === 0) {
-      if (query.trim()) {
-        return (
-          <View style={[styles.stateContainer, isDark ? styles.cardDark : styles.cardLight]}>
-            <SymbolView
-              name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }}
-              size={36}
-              tintColor={C.muted}
-            />
-            <Text style={[styles.stateTitle, { color: C.text }]}>
-              No matching videos
-            </Text>
-            <Text style={[styles.stateText, { color: C.muted }]}>
-              No videos matched &ldquo;{query}&rdquo;{category !== 'All' ? ` in ${category}` : ''}. Try another search term or clear the filter.
-            </Text>
-            <Pressable
-              style={[styles.actionBtn, { backgroundColor: C.surfaceRaised, borderColor: C.border }]}
-              onPress={clearFilters}
-            >
-              <Text style={[styles.actionBtnText, { color: C.text }]}>Clear search & filters</Text>
-            </Pressable>
-          </View>
-        );
-      }
-
-      if (category !== 'All') {
-        return (
-          <View style={[styles.stateContainer, isDark ? styles.cardDark : styles.cardLight]}>
-            <SymbolView
-              name={{ ios: 'film', android: 'movie', web: 'movie' }}
-              size={36}
-              tintColor={C.muted}
-            />
-            <Text style={[styles.stateTitle, { color: C.text }]}>
-              No videos in this category
-            </Text>
-            <Text style={[styles.stateText, { color: C.muted }]}>
-              There are currently no videos published in the {category} category.
-            </Text>
-            <Pressable
-              style={[styles.actionBtn, { backgroundColor: C.surfaceRaised, borderColor: C.border }]}
-              onPress={() => handleCategorySelect('All')}
-            >
-              <Text style={[styles.actionBtnText, { color: C.text }]}>View All Videos</Text>
-            </Pressable>
-          </View>
-        );
-      }
-
+    if (category !== 'All') {
       return (
-        <View style={[styles.stateContainer, isDark ? styles.cardDark : styles.cardLight]}>
-          <SymbolView
-            name={{ ios: 'video.badge.plus', android: 'video_call', web: 'video_call' }}
-            size={40}
-            tintColor={Design.color.accent}
-          />
-          <Text style={[styles.stateTitle, { color: C.text }]}>
-            Your feed is ready for its first video
-          </Text>
-          <Text style={[styles.stateText, { color: C.muted }]}>
-            Share a video with the Streanub community to get started.
-          </Text>
-          <Pressable
-            style={[styles.primaryBtn, { backgroundColor: Design.color.accent }]}
-            onPress={() => router.push('/upload')}
-          >
-            <Text style={styles.primaryBtnText}>Upload Video</Text>
-          </Pressable>
-        </View>
+        <EmptyState
+          icon={{ ios: 'film', android: 'movie', web: 'movie' }}
+          title="No videos in this category"
+          description={`There are currently no published videos in ${category}.`}
+          actionLabel="View All Videos"
+          onAction={() => handleCategorySelect('All')}
+        />
       );
     }
 
-    return undefined;
-  }, [
-    C.border,
-    C.muted,
-    C.surfaceRaised,
-    C.text,
-    category,
-    clearFilters,
-    error,
-    handleCategorySelect,
-    isDark,
-    loadVideos,
-    loading,
-    query,
-    videos.length,
-  ]);
+    return (
+      <EmptyState
+        icon={{ ios: 'video.badge.plus', android: 'video_call', web: 'video_call' }}
+        accentIcon
+        title="Your feed is ready for its first video"
+        description="Videos published by Streanub creators will appear here."
+        actionLabel={user?.role === 'creator' ? 'Upload Video' : 'Explore Search'}
+        onAction={() => router.push(user?.role === 'creator' ? '/upload' : '/explore')}
+      />
+    );
+  }, [category, error, handleCategorySelect, loadVideos, loading, user?.role]);
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: C.background }]} edges={['top']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+      <AppHeader showThemeToggle bordered />
+
       <FlatList
         data={videos}
         keyExtractor={(item) => item._id}
@@ -407,16 +239,20 @@ export default function HomeScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={Design.color.accent}
-            colors={[Design.color.accent]}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
           />
         }
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
+        removeClippedSubviews
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={7}
         ListFooterComponent={
           loadingMore ? (
             <View style={styles.loadingMoreFooter}>
-              <ActivityIndicator color={Design.color.accent} />
+              <ActivityIndicator color={colors.accent} />
             </View>
           ) : undefined
         }
@@ -432,149 +268,37 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    padding: 16,
-    paddingBottom: 36,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 32,
     width: '100%',
     maxWidth: 880,
     alignSelf: 'center',
   },
   headerArea: {
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-    minHeight: 48,
-  },
-  brandContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  logoIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 9,
-    backgroundColor: Design.color.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brandTextBlock: {
-    gap: 1,
-  },
-  brandTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: -0.6,
-  },
-  brandSubtitle: {
-    fontSize: 12,
-    letterSpacing: -0.1,
-  },
-  topActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  uploadShortcut: {
-    width: 44,
-    height: 44,
-    borderRadius: Design.radius.sm,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bellBadge: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    paddingHorizontal: 4,
-    backgroundColor: Design.color.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bellBadgeText: { color: '#ffffff', fontSize: 10, fontWeight: '800' },
   filterBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 4,
-    paddingVertical: 6,
-    marginBottom: 12,
+    paddingVertical: 4,
+    marginBottom: 10,
   },
   filterBarText: {
     fontSize: 13,
   },
   clearFilterBtn: {
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingVertical: 4,
   },
   clearFilterText: {
     fontSize: 13,
     fontWeight: '700',
   },
   skeletonContainer: {
-    paddingTop: 8,
-  },
-  stateContainer: {
-    alignItems: 'center',
-    paddingVertical: 44,
-    paddingHorizontal: 24,
-    borderRadius: Design.radius.lg,
-    borderWidth: 1,
-    gap: 12,
-    marginTop: 8,
-  },
-  cardDark: {
-    backgroundColor: Design.color.surface,
-    borderColor: Design.color.border,
-  },
-  cardLight: {
-    backgroundColor: Design.light.surface,
-    borderColor: Design.light.border,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  stateTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  stateText: {
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 19,
-    maxWidth: 400,
-  },
-  actionBtn: {
-    borderWidth: 1,
-    borderRadius: Design.radius.sm,
-    paddingHorizontal: 20,
-    paddingVertical: 11,
-    marginTop: 6,
-  },
-  actionBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  primaryBtn: {
-    borderRadius: Design.radius.sm,
-    paddingHorizontal: 24,
-    paddingVertical: 13,
-    marginTop: 8,
-  },
-  primaryBtnText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '800',
+    paddingTop: 4,
   },
   loadingMoreFooter: {
     paddingVertical: 20,

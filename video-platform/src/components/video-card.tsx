@@ -1,20 +1,19 @@
 import { useState } from 'react';
-import { Modal, Platform, Share, StyleSheet } from 'react-native';
+import { Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
-import { Pressable, Text, View } from '@/components/theme-native';
+import { ActionSheet, Avatar, type ActionSheetOption } from '@/components/ui';
 import { Design } from '@/constants/design';
 import { useAuth } from '@/contexts/auth-context';
 import { useSubscription } from '@/contexts/subscription-context';
-import { useThemeMode } from '@/contexts/theme-context';
+import { useDesignTheme } from '@/contexts/theme-context';
 import { useToast } from '@/contexts/toast-context';
-import { setWatchLater } from '@/lib/video-service';
+import { reportContent, setWatchLater, type ReportReason } from '@/lib/video-service';
 import {
   cleanDescriptionPreview,
   cleanTitle,
   creatorAvatarUrl,
-  creatorInitials,
   creatorLabel,
   durationLabel,
   formatTimeAgo,
@@ -28,23 +27,28 @@ type VideoCardProps = {
   onOverflowPress?: (video: VideoRecord) => void;
 };
 
+const REPORT_REASONS: { id: ReportReason; label: string }[] = [
+  { id: 'inappropriate_content', label: 'Inappropriate content' },
+  { id: 'spam', label: 'Spam or misleading' },
+  { id: 'harassment', label: 'Harassment or hate' },
+  { id: 'copyright', label: 'Copyright infringement' },
+  { id: 'misinformation', label: 'Misinformation' },
+  { id: 'violence', label: 'Violent or harmful content' },
+];
+
 export function VideoCard({ video, onPress, onOverflowPress }: VideoCardProps) {
-  const { mode } = useThemeMode();
+  const { colors, isDark } = useDesignTheme();
   const { showToast } = useToast();
   const { user } = useAuth();
   const { showSignInModal } = useSubscription();
   const [imageError, setImageError] = useState(false);
-  const [avatarError, setAvatarError] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-
-  const isDark = mode === 'dark';
-  const C = isDark ? Design.color : Design.light;
+  const [showReportSheet, setShowReportSheet] = useState(false);
 
   const title = cleanTitle(video.title);
   const description = cleanDescriptionPreview(video.description);
   const creator = creatorLabel(video.creator);
   const avatarUrl = creatorAvatarUrl(video.creator);
-  const initials = creatorInitials(video.creator);
   const duration = durationLabel(video.duration);
   const views = formatViews(video.views);
   const timeAgo = formatTimeAgo(video.createdAt);
@@ -64,7 +68,6 @@ export function VideoCard({ video, onPress, onOverflowPress }: VideoCardProps) {
   };
 
   const handleShare = async () => {
-    setShowMenu(false);
     const origin =
       Platform.OS === 'web' && typeof window !== 'undefined'
         ? window.location.origin
@@ -93,7 +96,6 @@ export function VideoCard({ video, onPress, onOverflowPress }: VideoCardProps) {
   };
 
   const handleSave = async () => {
-    setShowMenu(false);
     if (!user) {
       showSignInModal('save videos to Watch Later');
       return;
@@ -106,17 +108,77 @@ export function VideoCard({ video, onPress, onOverflowPress }: VideoCardProps) {
     }
   };
 
-  const handleReport = () => {
-    setShowMenu(false);
-    showToast('Thank you for reporting this video');
+  const handleStartReport = () => {
+    if (!user) {
+      showSignInModal('report this video');
+      return;
+    }
+    setShowReportSheet(true);
   };
+
+  const handleSubmitReport = async (reason: ReportReason) => {
+    try {
+      await reportContent({
+        targetType: 'video',
+        targetId: video._id,
+        reason,
+      });
+      showToast('Report submitted. Thank you for keeping Streanub safe.');
+    } catch (cause) {
+      showToast(
+        cause instanceof Error ? cause.message : 'Could not submit report right now.',
+        'error'
+      );
+    }
+  };
+
+  const menuOptions: ActionSheetOption[] = [
+    {
+      id: 'watch-later',
+      label: 'Save to Watch Later',
+      icon: { ios: 'bookmark', android: 'bookmark_border', web: 'bookmark' },
+      onPress: () => void handleSave(),
+    },
+    ...(creatorId
+      ? [
+          {
+            id: 'channel',
+            label: `Go to ${creator}`,
+            icon: { ios: 'person.crop.circle', android: 'account_circle', web: 'account_circle' },
+            onPress: () => handleCreatorPress(),
+          },
+        ]
+      : []),
+    {
+      id: 'share',
+      label: 'Share video',
+      icon: { ios: 'square.and.arrow.up', android: 'share', web: 'share' },
+      onPress: () => void handleShare(),
+    },
+    {
+      id: 'report',
+      label: 'Report video',
+      icon: { ios: 'flag', android: 'flag', web: 'flag' },
+      destructive: true,
+      onPress: handleStartReport,
+    },
+  ];
+
+  const reportOptions: ActionSheetOption[] = REPORT_REASONS.map((item) => ({
+    id: item.id,
+    label: item.label,
+    icon: { ios: 'flag', android: 'flag', web: 'flag' },
+    destructive: true,
+    onPress: () => void handleSubmitReport(item.id),
+  }));
 
   return (
     <>
       <Pressable
         style={({ pressed }) => [
           styles.card,
-          isDark ? styles.cardDark : styles.cardLight,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+          !isDark && Design.shadow.sm,
           pressed && styles.pressed,
         ]}
         onPress={onPress}
@@ -130,21 +192,29 @@ export function VideoCard({ video, onPress, onOverflowPress }: VideoCardProps) {
               source={{ uri: video.thumbnailUrl }}
               style={styles.thumbnail}
               contentFit="cover"
-              transition={200}
+              transition={180}
+              cachePolicy="memory-disk"
               onError={() => setImageError(true)}
             />
           ) : (
-            <View style={[styles.fallbackThumbnail, isDark ? styles.fallbackDark : styles.fallbackLight]}>
+            <View
+              style={[
+                styles.fallbackThumbnail,
+                { backgroundColor: isDark ? '#131821' : '#f1f5f9' },
+              ]}
+            >
               <View style={styles.fallbackIconBadge}>
                 <SymbolView
                   name={{ ios: 'play.fill', android: 'play_arrow', web: 'play_arrow' }}
                   size={28}
-                  tintColor={Design.color.accent}
+                  tintColor={colors.accent}
                 />
               </View>
               <Text style={styles.fallbackBrand}>STREANUB</Text>
               {video.category ? (
-                <Text style={styles.fallbackCategory}>{video.category.toUpperCase()}</Text>
+                <Text style={[styles.fallbackCategory, { color: colors.accent }]}>
+                  {video.category.toUpperCase()}
+                </Text>
               ) : null}
             </View>
           )}
@@ -175,7 +245,6 @@ export function VideoCard({ video, onPress, onOverflowPress }: VideoCardProps) {
 
         {/* Video Information Row */}
         <View style={styles.infoRow}>
-          {/* Creator Profile Image / Avatar */}
           <Pressable
             style={styles.avatarWrap}
             onPress={handleCreatorPress}
@@ -183,57 +252,41 @@ export function VideoCard({ video, onPress, onOverflowPress }: VideoCardProps) {
             accessibilityRole="button"
             accessibilityLabel={`View ${creator}'s channel`}
           >
-            {avatarUrl && !avatarError ? (
-              <Image
-                source={{ uri: avatarUrl }}
-                style={styles.avatar}
-                contentFit="cover"
-                transition={150}
-                onError={() => setAvatarError(true)}
-              />
-            ) : (
-              <View style={[styles.avatarFallback, { backgroundColor: isDark ? '#232b36' : '#dbe1ea' }]}>
-                <Text style={[styles.avatarInitials, { color: C.text }]}>{initials}</Text>
-              </View>
-            )}
+            <Avatar uri={avatarUrl} name={creator} size={38} />
           </Pressable>
 
-          {/* Video Metadata Column */}
           <View style={styles.detailsColumn}>
-            {/* Video Title: max 2 lines with ellipsis */}
             <Text
-              style={[styles.title, isDark ? styles.titleDark : styles.titleLight]}
+              style={[styles.title, { color: colors.text }]}
               numberOfLines={2}
               ellipsizeMode="tail"
             >
               {title}
             </Text>
 
-            {/* Channel info & metadata line */}
             <View style={styles.metadataRow}>
               <Pressable onPress={handleCreatorPress} hitSlop={4}>
-                <Text style={[styles.channelName, { color: C.secondary }]} numberOfLines={1}>
+                <Text style={[styles.channelName, { color: colors.secondary }]} numberOfLines={1}>
                   {creator}
                 </Text>
               </Pressable>
               {views ? (
                 <>
-                  <Text style={[styles.dot, { color: C.muted }]}>•</Text>
-                  <Text style={[styles.metaText, { color: C.muted }]}>{views}</Text>
+                  <Text style={[styles.dot, { color: colors.muted }]}>•</Text>
+                  <Text style={[styles.metaText, { color: colors.muted }]}>{views}</Text>
                 </>
               ) : null}
               {timeAgo ? (
                 <>
-                  <Text style={[styles.dot, { color: C.muted }]}>•</Text>
-                  <Text style={[styles.metaText, { color: C.muted }]}>{timeAgo}</Text>
+                  <Text style={[styles.dot, { color: colors.muted }]}>•</Text>
+                  <Text style={[styles.metaText, { color: colors.muted }]}>{timeAgo}</Text>
                 </>
               ) : null}
             </View>
 
-            {/* Video description preview cleanly truncated */}
             {description ? (
               <Text
-                style={[styles.description, { color: C.muted }]}
+                style={[styles.description, { color: colors.muted }]}
                 numberOfLines={1}
                 ellipsizeMode="tail"
               >
@@ -241,7 +294,6 @@ export function VideoCard({ video, onPress, onOverflowPress }: VideoCardProps) {
               </Text>
             ) : null}
 
-            {/* Category chip preview */}
             {video.category ? (
               <View style={styles.categoryPillWrap}>
                 <View
@@ -249,21 +301,24 @@ export function VideoCard({ video, onPress, onOverflowPress }: VideoCardProps) {
                     styles.categoryPill,
                     {
                       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)',
-                      borderColor: C.border,
+                      borderColor: colors.border,
                     },
                   ]}
                 >
-                  <Text style={[styles.categoryPillText, { color: C.muted }]}>{video.category}</Text>
+                  <Text style={[styles.categoryPillText, { color: colors.muted }]}>
+                    {video.category}
+                  </Text>
                 </View>
               </View>
             ) : null}
           </View>
 
-          {/* Overflow Menu (Three-dot button) */}
           <Pressable
             style={({ pressed }) => [
               styles.overflowBtn,
-              pressed && (isDark ? styles.overflowBtnPressedDark : styles.overflowBtnPressedLight),
+              pressed && {
+                backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.06)',
+              },
             ]}
             onPress={(e) => {
               e?.stopPropagation?.();
@@ -280,102 +335,27 @@ export function VideoCard({ video, onPress, onOverflowPress }: VideoCardProps) {
             <SymbolView
               name={{ ios: 'ellipsis', android: 'more_vert', web: 'more_vert' }}
               size={18}
-              tintColor={C.muted}
+              tintColor={colors.muted}
             />
           </Pressable>
         </View>
       </Pressable>
 
-      {/* Overflow Menu Modal */}
-      <Modal
+      <ActionSheet
         visible={showMenu}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowMenu(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setShowMenu(false)}>
-          <View
-            style={[
-              styles.modalSheet,
-              isDark ? styles.modalSheetDark : styles.modalSheetLight,
-            ]}
-          >
-            {/* Header info */}
-            <View style={styles.modalHeader}>
-              <View style={styles.modalHeaderInfo}>
-                <Text
-                  style={[styles.modalTitle, { color: C.text }]}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {title}
-                </Text>
-                <Text style={[styles.modalCreator, { color: C.muted }]}>{creator}</Text>
-              </View>
-            </View>
+        onClose={() => setShowMenu(false)}
+        title={title}
+        subtitle={creator}
+        options={menuOptions}
+      />
 
-            <View style={[styles.divider, { backgroundColor: C.border }]} />
-
-            {/* Action Items */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.menuItem,
-                pressed && (isDark ? styles.menuItemPressedDark : styles.menuItemPressedLight),
-              ]}
-              onPress={handleSave}
-            >
-              <SymbolView
-                name={{ ios: 'bookmark', android: 'bookmark_border', web: 'bookmark' }}
-                size={20}
-                tintColor={C.text}
-              />
-              <Text style={[styles.menuItemText, { color: C.text }]}>Save to Watch Later</Text>
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.menuItem,
-                pressed && (isDark ? styles.menuItemPressedDark : styles.menuItemPressedLight),
-              ]}
-              onPress={handleShare}
-            >
-              <SymbolView
-                name={{ ios: 'square.and.arrow.up', android: 'share', web: 'share' }}
-                size={20}
-                tintColor={C.text}
-              />
-              <Text style={[styles.menuItemText, { color: C.text }]}>Share video</Text>
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.menuItem,
-                pressed && (isDark ? styles.menuItemPressedDark : styles.menuItemPressedLight),
-              ]}
-              onPress={handleReport}
-            >
-              <SymbolView
-                name={{ ios: 'flag', android: 'flag', web: 'flag' }}
-                size={20}
-                tintColor={Design.color.danger}
-              />
-              <Text style={[styles.menuItemText, { color: Design.color.danger }]}>Report video</Text>
-            </Pressable>
-
-            <View style={[styles.divider, { backgroundColor: C.border }]} />
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.cancelBtn,
-                pressed && (isDark ? styles.menuItemPressedDark : styles.menuItemPressedLight),
-              ]}
-              onPress={() => setShowMenu(false)}
-            >
-              <Text style={[styles.cancelBtnText, { color: C.muted }]}>Cancel</Text>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
+      <ActionSheet
+        visible={showReportSheet}
+        onClose={() => setShowReportSheet(false)}
+        title="Report video"
+        subtitle="Select the reason that best describes the issue"
+        options={reportOptions}
+      />
     </>
   );
 }
@@ -384,24 +364,11 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: Design.radius.lg,
     overflow: 'hidden',
-    marginBottom: 20,
+    marginBottom: 18,
     borderWidth: 1,
   },
-  cardDark: {
-    backgroundColor: Design.color.surface,
-    borderColor: Design.color.border,
-  },
-  cardLight: {
-    backgroundColor: Design.light.surface,
-    borderColor: Design.light.border,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
   pressed: {
-    opacity: 0.88,
+    opacity: 0.9,
   },
   thumbnailContainer: {
     width: '100%',
@@ -420,12 +387,6 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 8,
   },
-  fallbackDark: {
-    backgroundColor: '#131821',
-  },
-  fallbackLight: {
-    backgroundColor: '#f1f5f9',
-  },
   fallbackIconBadge: {
     width: 52,
     height: 52,
@@ -443,7 +404,6 @@ const styles = StyleSheet.create({
     letterSpacing: 2.5,
   },
   fallbackCategory: {
-    color: Design.color.accent,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1.2,
@@ -495,39 +455,12 @@ const styles = StyleSheet.create({
   avatarWrap: {
     paddingTop: 2,
   },
-  avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#202632',
-  },
-  avatarFallback: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarInitials: {
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
   detailsColumn: {
     flex: 1,
     gap: 3,
   },
   title: {
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
-    letterSpacing: -0.2,
-  },
-  titleDark: {
-    color: Design.color.text,
-  },
-  titleLight: {
-    color: Design.light.text,
+    ...Design.typography.subheading,
   },
   metadataRow: {
     flexDirection: 'row',
@@ -571,87 +504,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 2,
-  },
-  overflowBtnPressedDark: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  overflowBtnPressedLight: {
-    backgroundColor: 'rgba(15, 23, 42, 0.06)',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    padding: 18,
-    paddingBottom: 28,
-    maxWidth: 600,
-    width: '100%',
-    alignSelf: 'center',
-  },
-  modalSheetDark: {
-    backgroundColor: Design.color.surface,
-    borderColor: Design.color.border,
-    borderTopWidth: 1,
-  },
-  modalSheetLight: {
-    backgroundColor: Design.light.surface,
-    borderColor: Design.light.border,
-    borderTopWidth: 1,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 10,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingBottom: 12,
-  },
-  modalHeaderInfo: {
-    flex: 1,
-    gap: 3,
-  },
-  modalTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  modalCreator: {
-    fontSize: 12,
-  },
-  divider: {
-    height: 1,
-    marginVertical: 10,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingVertical: 13,
-    paddingHorizontal: 8,
-    borderRadius: Design.radius.sm,
-  },
-  menuItemPressedDark: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  menuItemPressedLight: {
-    backgroundColor: 'rgba(15, 23, 42, 0.05)',
-  },
-  menuItemText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  cancelBtn: {
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
   },
 });
